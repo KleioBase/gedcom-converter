@@ -6,6 +6,9 @@ const input = `0 HEAD
 2 VERS 7.0.18
 0 @I1@ INDI
 1 NAME Ada /Lovelace/
+1 BIRT
+2 DATE BET 1 JAN 1815 AND 31 DEC 1815
+3 PHRASE about 1815
 1 SNOTE @N1@
 0 @I2@ INDI
 1 NAME Charles /Babbage/
