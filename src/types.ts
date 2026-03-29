@@ -1,4 +1,6 @@
 export type SupportedVersion = "5.5.1" | "7.0.18";
+export type ParseableVersion = "5.5" | SupportedVersion;
+export type DetectedVersion = ParseableVersion | "unknown";
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
@@ -39,7 +41,7 @@ export interface ParsedRecord {
 }
 
 export interface ParsedDocument {
-  version: SupportedVersion;
+  version: ParseableVersion;
   header: ParsedHeader;
   records: ParsedRecord[];
   extensions: GedcomNode[];
@@ -60,7 +62,7 @@ export interface ConversionResult {
 }
 
 export interface ParseOptions {
-  version?: SupportedVersion;
+  version?: ParseableVersion;
 }
 
 export interface StringifyOptions {
@@ -68,7 +70,7 @@ export interface StringifyOptions {
 }
 
 export interface ConvertOptions {
-  from: SupportedVersion;
+  from: ParseableVersion;
   to: SupportedVersion;
   strict?: boolean;
   preserveUnknown?: boolean;

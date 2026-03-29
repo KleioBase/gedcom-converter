@@ -1,4 +1,4 @@
-import type { ParsedDocument, ParsedHeader, ParsedRecord } from "../types.js";
+import type { ParseableVersion, ParsedDocument, ParsedHeader, ParsedRecord } from "../types.js";
 import { decodeInput } from "../utils/text.js";
 import { normalizeContinuationPayloads, parseGedcomTree } from "../utils/lines.js";
 import { GEDCOM551_VERSION } from "./schema.js";
@@ -35,15 +35,18 @@ export function parseGedcom551(input: string | Uint8Array): ParsedDocument {
     .filter((node) => !node.tag.startsWith("_"))
     .map((node) => toParsedRecord(node));
 
+  const parsedVersion = extractHeaderVersion(headerNode.children);
+  const documentVersion: ParseableVersion = parsedVersion === "5.5" ? "5.5" : GEDCOM551_VERSION;
+
   const header: ParsedHeader = {
-    gedcomVersion: extractHeaderVersion(headerNode.children) ?? GEDCOM551_VERSION,
+    gedcomVersion: parsedVersion ?? GEDCOM551_VERSION,
     characterSet: headerNode.children.find((child) => child.tag === "CHAR")?.value ?? "ANSEL",
     raw: headerNode,
     ...(sourceSystem !== undefined ? { sourceSystem } : {})
   };
 
   return {
-    version: GEDCOM551_VERSION,
+    version: documentVersion,
     header,
     records,
     extensions,

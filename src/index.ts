@@ -4,17 +4,19 @@ import { stringifyGedcom551 } from "./gedcom551/serializer.js";
 import { parseGedcom7 } from "./gedcom7/parser.js";
 import { stringifyGedcom7 } from "./gedcom7/serializer.js";
 import { decodeInput } from "./utils/text.js";
-import type { ParseOptions, ParsedDocument, StringifyOptions, SupportedVersion } from "./types.js";
+import type { DetectedVersion, ParseOptions, ParsedDocument, StringifyOptions, SupportedVersion } from "./types.js";
 
 export { convertGedcom } from "./convert/index.js";
 export type {
   ConversionResult,
   ConvertOptions,
+  DetectedVersion,
   Diagnostic,
   DiagnosticLocation,
   DiagnosticSeverity,
   GedcomNode,
   ParseOptions,
+  ParseableVersion,
   ParsedDocument,
   ParsedHeader,
   ParsedRecord,
@@ -22,11 +24,15 @@ export type {
   SupportedVersion
 } from "./types.js";
 
-function extractVersionFromHead(input: string): SupportedVersion | "unknown" {
-  const normalized = decodeInput(input);
+function extractVersionFromHead(input: string): DetectedVersion {
+  const normalized = decodeInput(input).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   if (/(?:^|\r?\n)2 VERS 5\.5\.1(?:\r?\n|$)/.test(normalized)) {
     return "5.5.1";
+  }
+
+  if (/(?:^|\r?\n)2 VERS 5\.5(?:\r?\n|$)/.test(normalized)) {
+    return "5.5";
   }
 
   if (
@@ -39,7 +45,7 @@ function extractVersionFromHead(input: string): SupportedVersion | "unknown" {
   return "unknown";
 }
 
-export function detectGedcomVersion(input: string | Uint8Array): SupportedVersion | "unknown" {
+export function detectGedcomVersion(input: string | Uint8Array): DetectedVersion {
   return extractVersionFromHead(decodeInput(input));
 }
 
@@ -50,7 +56,7 @@ export function parseGedcom(input: string | Uint8Array, options: ParseOptions = 
     return parseGedcom7(input);
   }
 
-  if (version === "5.5.1") {
+  if (version === "5.5.1" || version === "5.5") {
     return parseGedcom551(input);
   }
 

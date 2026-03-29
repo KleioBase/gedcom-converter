@@ -1,7 +1,7 @@
-import type { Diagnostic, GedcomNode, ParsedDocument, ParsedHeader, ParsedRecord, SupportedVersion } from "../types.js";
+import type { Diagnostic, GedcomNode, ParseableVersion, ParsedDocument, ParsedHeader, ParsedRecord } from "../types.js";
 
 export interface IntermediateDocument {
-  version: SupportedVersion;
+  version: ParseableVersion;
   header: ParsedHeader;
   records: ParsedRecord[];
   extensions: GedcomNode[];
