@@ -1,0 +1,22 @@
+0 HEAD
+1 SOUR KleioBase
+2 VERS 0.1.0
+2 NAME KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 SUBM @SUBM1@
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ada /Lovelace/
+1 NOTE @N1@
+1 ASSO @I2@
+2 RELA Witness
+1 AFN 12345
+1 _KLEIO custom
+0 @I2@ INDI
+1 NAME Charles /Babbage/
+0 @N1@ NOTE Shared note
+0 @SUBM1@ SUBM
+1 NAME KleioBase
+0 TRLR

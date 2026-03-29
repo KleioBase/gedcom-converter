@@ -1,0 +1,16 @@
+0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 NAME Ada /Lovelace/
+1 SNOTE @N1@
+1 ASSO @I2@
+2 ROLE WITN
+1 EXID 12345
+2 TYPE https://gedcom.io/terms/v7/AFN
+1 _KLEIO custom
+0 @I2@ INDI
+1 NAME Charles /Babbage/
+0 @N1@ SNOTE Shared note
+0 TRLR
