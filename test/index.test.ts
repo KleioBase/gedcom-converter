@@ -15,6 +15,10 @@ describe("detectGedcomVersion", () => {
     expect(detectGedcomVersion(readFixture("minimal-5.5.1.ged"))).toBe("5.5.1");
   });
 
+  it("detects legacy GEDCOM 5.5", () => {
+    expect(detectGedcomVersion(readFixture("official/gedcom551/TGC551.ged"))).toBe("5.5");
+  });
+
   it("detects GEDCOM versions with CRLF line endings", () => {
     const input = "0 HEAD\r\n1 GEDC\r\n2 VERS 7.0.18\r\n0 TRLR\r\n";
     expect(detectGedcomVersion(input)).toBe("7.0.18");
@@ -37,6 +41,18 @@ describe("parseGedcom", () => {
     expect(document.records).toHaveLength(2);
     expect(document.records.map((record) => record.tag)).toEqual(["INDI", "SUBM"]);
     expect(document.header.characterSet).toBe("UTF-8");
+  });
+
+  it("parses official legacy GEDCOM 5.5 torture files with CR and LF line endings", () => {
+    const crDocument = parseGedcom(readFixture("official/gedcom551/TGC551.ged"));
+    const lfDocument = parseGedcom(readFixture("official/gedcom551/TGC551LF.ged"));
+
+    expect(crDocument.version).toBe("5.5");
+    expect(lfDocument.version).toBe("5.5");
+    expect(crDocument.records.length).toBeGreaterThan(0);
+    expect(lfDocument.records.length).toBeGreaterThan(0);
+    expect(crDocument.header.characterSet).toBe("ANSEL");
+    expect(lfDocument.header.characterSet).toBe("ANSEL");
   });
 
   it("combines CONT and CONC lines in GEDCOM 5.5.1 notes", () => {
@@ -152,6 +168,61 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 _EXID 999");
   });
 
+  it("converts GEDCOM 7 date phrases conservatively for GEDCOM 5.5.1", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BIRT
+2 DATE 30 JAN 1649
+3 PHRASE 30 January 1648/49
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 DATE INT 30 JAN 1649 (30 January 1648/49)");
+  });
+
+  it("warns when a GEDCOM 7 date phrase cannot be expressed inline in GEDCOM 5.5.1", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BIRT
+2 DATE BET 1903 AND 1904
+3 PHRASE 1903/4
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 DATE BET 1903 AND 1904");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DATE_PHRASE_DEGRADED")).toBe(true);
+  });
+
+  it("converts GEDCOM 7 calendar keywords and BCE dates to GEDCOM 5.5.1 date syntax", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 EVEN
+2 TYPE Ancient event
+2 DATE FROM JULIAN 667 BCE TO GREGORIAN 324
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 DATE FROM @#DJULIAN@ 667 B.C. TO @#DGREGORIAN@ 324");
+  });
+
   it("maps GEDCOM 7 multimedia FILE metadata to GEDCOM 5.5.1 FORM/TYPE", () => {
     const input = `0 HEAD
 1 GEDC
@@ -171,5 +242,61 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 FILE media/photo.jpg");
     expect(result.output).toContain("2 FORM jpeg");
     expect(result.output).toContain("3 TYPE photo");
+  });
+
+  it("parses and converts selected official GEDCOM 7 test files", () => {
+    const officialFiles = [
+      "official/gedcom70/notes-1.ged",
+      "official/gedcom70/maximal70-memories2.ged",
+      "official/gedcom70/maximal70.ged",
+      "official/gedcom70/age.ged",
+      "official/gedcom70/filename-1.ged"
+    ];
+
+    for (const file of officialFiles) {
+      const input = readFixture(file);
+      expect(() => parseGedcom(input, { version: "7.0.18" })).not.toThrow();
+      expect(() =>
+        convertGedcom(input, {
+          from: "7.0.18",
+          to: "5.5.1"
+        })
+      ).not.toThrow();
+    }
+  });
+
+  it("converts official note and multimedia fixtures without diagnostics", () => {
+    const notes = convertGedcom(readFixture("official/gedcom70/notes-1.ged"), {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+    const memories = convertGedcom(readFixture("official/gedcom70/maximal70-memories2.ged"), {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(notes.diagnostics).toHaveLength(0);
+    expect(memories.diagnostics).toHaveLength(0);
+  });
+
+  it("reduces filename fixture media-format diagnostics to the unsupported edge cases we still expect", () => {
+    const result = convertGedcom(readFixture("official/gedcom70/filename-1.ged"), {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
+    expect(codes).toEqual(["UNSUPPORTED_MEDIA_FORMAT"]);
+  });
+
+  it("can normalize a legacy GEDCOM 5.5 file into GEDCOM 5.5.1 output", () => {
+    const result = convertGedcom(readFixture("official/gedcom551/TGC551LF.ged"), {
+      from: "5.5",
+      to: "5.5.1"
+    });
+
+    expect(result.version).toBe("5.5.1");
+    expect(result.output).toContain("2 VERS 5.5.1");
+    expect(result.output).toContain("2 FORM LINEAGE-LINKED");
   });
 });
