@@ -22,5 +22,13 @@ const result = convertGedcom(input, {
   to: "5.5.1"
 });
 
+console.log(`Detected version: ${detected}`);
 console.log(result.output);
-console.log(result.diagnostics);
+
+if (result.diagnostics.length > 0) {
+  console.log("Diagnostics:");
+
+  for (const diagnostic of result.diagnostics) {
+    console.log(`- ${diagnostic.severity}: ${diagnostic.code} - ${diagnostic.message}`);
+  }
+}
