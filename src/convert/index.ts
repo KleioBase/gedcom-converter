@@ -1,4 +1,5 @@
 import { ConversionError } from "../errors/index.js";
+import { sanitizeGedcom551Document } from "../gedcom551/compatibility.js";
 import { parseGedcom551 } from "../gedcom551/parser.js";
 import { stringifyGedcom551 } from "../gedcom551/serializer.js";
 import { parseGedcom7 } from "../gedcom7/parser.js";
@@ -40,6 +41,10 @@ export function convertGedcom(input: string | Uint8Array, options: ConvertOption
     outputDocument = mapGedcom7DocumentTo551(intermediate);
   } else {
     throw new ConversionError(`Conversion from ${options.from} to ${options.to} is not implemented yet.`);
+  }
+
+  if (options.to === "5.5.1") {
+    outputDocument = sanitizeGedcom551Document(outputDocument);
   }
 
   if (options.strict && outputDocument.diagnostics.some((diagnostic) => diagnostic.severity === "warning")) {

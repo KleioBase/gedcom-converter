@@ -128,7 +128,7 @@ export function normalizeContinuationPayloads(nodes: GedcomNode[], mode: Continu
 }
 
 function encodeLineString(value: string, mode: ContinuationMode): string {
-  if (mode === "gedcom7" && value.startsWith("@")) {
+  if (value.startsWith("@")) {
     return `@${value}`;
   }
 
@@ -205,17 +205,17 @@ function emitGedcom551Node(lines: string[], node: GedcomNode): void {
   lines.push(formatLine(node.level, node.tag, firstValue, node.xref));
 
   for (const continuation of firstSegments.slice(1)) {
-    lines.push(formatLine(node.level + 1, "CONC", continuation, undefined));
+    lines.push(formatLine(node.level + 1, "CONC", encodeLineString(continuation, "gedcom551"), undefined));
   }
 
   for (const payloadLine of payloadLines.slice(1)) {
     const contPrefixLength = formatLine(node.level + 1, "CONT", undefined, undefined).length;
     const segments = splitGedcom551Segment(payloadLine, contPrefixLength);
 
-    lines.push(formatLine(node.level + 1, "CONT", segments[0], undefined));
+    lines.push(formatLine(node.level + 1, "CONT", encodeLineString(segments[0]!, "gedcom551"), undefined));
 
     for (const continuation of segments.slice(1)) {
-      lines.push(formatLine(node.level + 1, "CONC", continuation, undefined));
+      lines.push(formatLine(node.level + 1, "CONC", encodeLineString(continuation, "gedcom551"), undefined));
     }
   }
 
