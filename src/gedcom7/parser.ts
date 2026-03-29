@@ -1,6 +1,6 @@
 import type { ParsedDocument, ParsedHeader, ParsedRecord } from "../types.js";
 import { decodeInput } from "../utils/text.js";
-import { parseGedcomTree } from "../utils/lines.js";
+import { normalizeContinuationPayloads, parseGedcomTree } from "../utils/lines.js";
 import { GEDCOM7_VERSION } from "./schema.js";
 import { normalizeGedcom7Node } from "./normalization.js";
 
@@ -21,7 +21,7 @@ function extractHeaderVersion(headerChildren: ParsedHeader["raw"]["children"]): 
 export function parseGedcom7(input: string | Uint8Array): ParsedDocument {
   const text = decodeInput(input);
   const { roots, diagnostics } = parseGedcomTree(text);
-  const normalizedRoots = roots.map(normalizeGedcom7Node);
+  const normalizedRoots = normalizeContinuationPayloads(roots.map(normalizeGedcom7Node), "gedcom7");
   const headerNode = normalizedRoots.find((node) => node.tag === "HEAD");
 
   if (!headerNode) {

@@ -109,5 +109,5 @@ export function stringifyGedcom551(document: ParsedDocument): string {
     }
   ];
 
-  return stringifyGedcomTree(nodes);
+  return stringifyGedcomTree(nodes, { mode: "gedcom551" });
 }
