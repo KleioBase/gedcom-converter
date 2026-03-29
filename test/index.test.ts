@@ -89,6 +89,20 @@ describe("parseGedcom", () => {
 
     expect(document.records[0]?.value).toBe("First line\nSecond line");
   });
+
+  it("decodes escaped leading at-signs in GEDCOM 7 payload lines", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @U1@ SUBM
+1 NOTE me@example.com
+2 CONT @@me is a handle
+0 TRLR`;
+
+    const document = parseGedcom(input, { version: "7.0.18" });
+
+    expect(document.records[0]?.children[0]?.value).toBe("me@example.com\n@me is a handle");
+  });
 });
 
 describe("stringifyGedcom", () => {
@@ -125,6 +139,36 @@ describe("stringifyGedcom", () => {
 
     expect(output).toContain("0 @N1@ SNOTE First line");
     expect(output).toContain("1 CONT Second line");
+  });
+
+  it("escapes leading at-signs in GEDCOM 5.5.1 continuation lines", () => {
+    const output = stringifyGedcom(
+      {
+        version: "5.5.1",
+        header: {
+          gedcomVersion: "5.5.1",
+          characterSet: "UTF-8",
+          sourceSystem: "KleioBase",
+          raw: {
+            level: 0,
+            tag: "HEAD",
+            children: []
+          }
+        },
+        records: [
+          {
+            tag: "NOTE",
+            value: "First line\n@handle",
+            children: []
+          }
+        ],
+        extensions: [],
+        diagnostics: []
+      },
+      { version: "5.5.1" }
+    );
+
+    expect(output).toContain("1 CONT @@handle");
   });
 });
 
@@ -240,8 +284,123 @@ describe("convertGedcom", () => {
 
     expect(result.output).toContain("0 @O1@ OBJE");
     expect(result.output).toContain("1 FILE media/photo.jpg");
-    expect(result.output).toContain("2 FORM jpeg");
-    expect(result.output).toContain("3 TYPE photo");
+    expect(result.output).toContain("2 FORM jpg");
+    expect(result.output).toContain("3 TYPE PHOTO");
+  });
+
+  it("demotes incompatible GEDCOM 7 structures instead of emitting invalid GEDCOM 5.5.1 tags", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @F1@ FAM
+1 ASSO @VOID@
+2 ROLE OFFICIATOR
+1 FACT Fact
+1 UID 123
+1 NO DIV
+0 @I1@ INDI
+1 RESI Residence
+1 SEX X
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("1 EVEN Fact");
+    expect(result.output).toContain("1 _UID 123");
+    expect(result.output).toContain("1 _NO DIV");
+    expect(result.output).toContain("1 SEX U");
+    expect(result.output).not.toContain("1 ASSO @VOID@");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DROPPED_MISSING_POINTER")).toBe(true);
+  });
+
+  it("keeps generic source citation EVEN payloads but clears generic individual EVEN payloads", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 EVEN Event
+2 TYPE Event type
+0 @S1@ SOUR
+1 DATA
+2 EVEN BIRT
+3 DATE 1 JAN 1900
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("0 @I1@ INDI");
+    expect(result.output).toContain("1 EVEN");
+    expect(result.output).toContain("2 TYPE Event");
+    expect(result.output).toContain("0 @S1@ SOUR");
+    expect(result.output).toContain("2 EVEN BIRT");
+  });
+
+  it("keeps citation-level EVEN payloads under linked source references", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @O1@ OBJE
+1 SOUR @S1@
+2 EVEN BIRT
+3 PHRASE Event phrase
+0 @S1@ SOUR
+1 TITL Source
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("1 SOUR @S1@");
+    expect(result.output).toContain("2 EVEN BIRT");
+    expect(result.output).not.toContain("2 EVEN\n3 TYPE BIRT");
+  });
+
+  it("moves family-level generic EVEN labels into the GEDCOM 5.5.1 descriptor slot", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @F1@ FAM
+1 EVEN Event
+2 TYPE Event type
+1 FACT Fact
+2 TYPE Fact type
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("1 EVEN Event");
+    expect(result.output).toContain("2 TYPE Event type");
+    expect(result.output).toContain("1 EVEN Fact");
+    expect(result.output).toContain("2 TYPE Fact type");
+  });
+
+  it("demotes inline notes whose continuation text starts with @ to avoid invalid GEDCOM 5.5.1 note payloads", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 NOTE First line
+2 CONT @@handle
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("1 _NOTE First line");
+    expect(result.output).toContain("2 CONT @@handle");
   });
 
   it("parses and converts selected official GEDCOM 7 test files", () => {
@@ -265,7 +424,7 @@ describe("convertGedcom", () => {
     }
   });
 
-  it("converts official note and multimedia fixtures without diagnostics", () => {
+  it("converts official note and multimedia fixtures with only expected degradation diagnostics", () => {
     const notes = convertGedcom(readFixture("official/gedcom70/notes-1.ged"), {
       from: "7.0.18",
       to: "5.5.1"
@@ -276,17 +435,28 @@ describe("convertGedcom", () => {
     });
 
     expect(notes.diagnostics).toHaveLength(0);
-    expect(memories.diagnostics).toHaveLength(0);
+    expect(memories.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "DROPPED_MISSING_POINTER",
+      "DROPPED_MISSING_POINTER",
+      "FILE_REFERENCE_DEGRADED"
+    ]);
   });
 
-  it("reduces filename fixture media-format diagnostics to the unsupported edge cases we still expect", () => {
+  it("reduces filename fixture diagnostics to the unsupported media and file-length edge cases we still expect", () => {
     const result = convertGedcom(readFixture("official/gedcom70/filename-1.ged"), {
       from: "7.0.18",
       to: "5.5.1"
     });
 
     const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
-    expect(codes).toEqual(["UNSUPPORTED_MEDIA_FORMAT"]);
+    expect(codes).toEqual([
+      "UNSUPPORTED_MEDIA_FORMAT",
+      "FILE_REFERENCE_DEGRADED",
+      "FILE_REFERENCE_DEGRADED",
+      "FILE_REFERENCE_DEGRADED",
+      "FILE_REFERENCE_DEGRADED",
+      "FILE_REFERENCE_DEGRADED"
+    ]);
   });
 
   it("can normalize a legacy GEDCOM 5.5 file into GEDCOM 5.5.1 output", () => {
@@ -298,5 +468,20 @@ describe("convertGedcom", () => {
     expect(result.version).toBe("5.5.1");
     expect(result.output).toContain("2 VERS 5.5.1");
     expect(result.output).toContain("2 FORM LINEAGE-LINKED");
+  });
+
+  it("sanitizes maximal70 output away from the loudest 7-only constructs", () => {
+    const result = convertGedcom(readFixture("official/gedcom70/maximal70.ged"), {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).not.toMatch(/\n\d+ UID\b/);
+    expect(result.output).not.toMatch(/\n\d+ CREA\b/);
+    expect(result.output).not.toMatch(/\n\d+ TRAN\b/);
+    expect(result.output).not.toMatch(/\n\d+ PHRASE\b/);
+    expect(result.output).not.toContain("@VOID@");
+    expect(result.output).not.toContain(" FORM jpeg");
+    expect(result.output).not.toContain(" TYPE other");
   });
 });
