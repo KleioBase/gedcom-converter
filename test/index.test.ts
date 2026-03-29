@@ -38,6 +38,41 @@ describe("parseGedcom", () => {
     expect(document.records.map((record) => record.tag)).toEqual(["INDI", "SUBM"]);
     expect(document.header.characterSet).toBe("UTF-8");
   });
+
+  it("combines CONT and CONC lines in GEDCOM 5.5.1 notes", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+2 VERS 0.1.0
+2 NAME KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 SUBM @SUBM1@
+1 CHAR UTF-8
+0 @N1@ NOTE First line
+1 CONT Second line
+1 CONC continues
+0 @SUBM1@ SUBM
+1 NAME KleioBase
+0 TRLR`;
+
+    const document = parseGedcom(input, { version: "5.5.1" });
+
+    expect(document.records[0]?.value).toBe("First line\nSecond linecontinues");
+  });
+
+  it("combines CONT lines in GEDCOM 7 notes", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @N1@ SNOTE First line
+1 CONT Second line
+0 TRLR`;
+
+    const document = parseGedcom(input, { version: "7.0.18" });
+
+    expect(document.records[0]?.value).toBe("First line\nSecond line");
+  });
 });
 
 describe("stringifyGedcom", () => {
@@ -60,6 +95,20 @@ describe("stringifyGedcom", () => {
     expect(output).toContain("1 SUBM @SUBM1@");
     expect(output).toContain("0 @SUBM1@ SUBM");
     expect(output).toContain("0 TRLR");
+  });
+
+  it("serializes multiline values using continuation lines", () => {
+    const document = parseGedcom(`0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @N1@ SNOTE First line
+1 CONT Second line
+0 TRLR`, { version: "7.0.18" });
+
+    const output = stringifyGedcom(document, { version: "7.0.18" });
+
+    expect(output).toContain("0 @N1@ SNOTE First line");
+    expect(output).toContain("1 CONT Second line");
   });
 });
 
@@ -101,5 +150,26 @@ describe("convertGedcom", () => {
 
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "UNSUPPORTED_EXID")).toBe(true);
     expect(result.output).toContain("1 _EXID 999");
+  });
+
+  it("maps GEDCOM 7 multimedia FILE metadata to GEDCOM 5.5.1 FORM/TYPE", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @O1@ OBJE
+1 FILE media/photo.jpg
+2 FORM image/jpeg
+3 MEDI PHOTO
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("0 @O1@ OBJE");
+    expect(result.output).toContain("1 FILE media/photo.jpg");
+    expect(result.output).toContain("2 FORM jpeg");
+    expect(result.output).toContain("3 TYPE photo");
   });
 });

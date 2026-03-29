@@ -42,9 +42,38 @@ function mapMimeToForm(mime: string | undefined): string | undefined {
       return "tiff";
     case "audio/wav":
       return "wav";
+    case "audio/mp3":
+    case "audio/mpeg":
+      return "mp3";
+    case "video/mp4":
+      return "mp4";
+    case "application/pdf":
+      return "pdf";
+    case "text/plain":
+      return "txt";
     default:
       return undefined;
   }
+}
+
+function inferMediaType(mime: string | undefined): string | undefined {
+  if (!mime) {
+    return undefined;
+  }
+
+  if (mime.startsWith("image/")) {
+    return "photo";
+  }
+
+  if (mime.startsWith("audio/")) {
+    return "audio";
+  }
+
+  if (mime.startsWith("video/")) {
+    return "video";
+  }
+
+  return "electronic";
 }
 
 function mapRoleToRela(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
@@ -147,6 +176,54 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null
     });
   }
 
+  if (node.tag === "FILE") {
+    const mappedChildren: GedcomNode[] = [];
+    const formNode = node.children.find((child) => child.tag === "FORM");
+    const mediaTypeNode = formNode?.children.find((child) => child.tag === "MEDI");
+    const mappedForm = mapMimeToForm(formNode?.value);
+    const mappedMediaType = mediaTypeNode?.value?.toLowerCase() ?? inferMediaType(formNode?.value);
+
+    if (mappedForm) {
+      const formChildren = mappedMediaType
+        ? [makeNode({ level: 3, tag: "TYPE", value: mappedMediaType, children: [] })]
+        : [];
+
+      mappedChildren.push(
+        makeNode({
+          level: 2,
+          tag: "FORM",
+          value: mappedForm,
+          children: formChildren
+        })
+      );
+    } else if (formNode?.value) {
+      diagnostics.push({
+        severity: "warning",
+        code: "UNSUPPORTED_MEDIA_FORMAT",
+        message: `Unable to map multimedia media type ${formNode.value} to GEDCOM 5.5.1 FORM.`,
+        location: withOptionalLocation(formNode)
+      });
+    }
+
+    for (const child of node.children) {
+      if (child.tag === "FORM") {
+        continue;
+      }
+
+      const mappedChild = mapNode(child, diagnostics);
+      if (mappedChild) {
+        mappedChildren.push(mappedChild);
+      }
+    }
+
+    return makeNode({
+      level: node.level,
+      tag: "FILE",
+      ...(node.value !== undefined ? { value: node.value } : {}),
+      children: mappedChildren
+    });
+  }
+
   return makeNode({
     level: node.level,
     tag: node.tag,
@@ -175,7 +252,7 @@ export function mapGedcom7DocumentTo551(document: ParsedDocument): ParsedDocumen
     header: {
       ...document.header,
       gedcomVersion: "5.5.1",
-      characterSet: "UNICODE"
+      characterSet: "UTF-8"
     },
     records: document.records.map((record) => mapRecord(record, diagnostics)),
     extensions: document.extensions.map(cloneNode),
