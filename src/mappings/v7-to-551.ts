@@ -1,4 +1,5 @@
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
+import { mapGedcom7DateNodeTo551 } from "./date/v7-to-551.js";
 
 function cloneNode(node: GedcomNode): GedcomNode {
   return {
@@ -33,6 +34,7 @@ function makeNode(base: {
 function mapMimeToForm(mime: string | undefined): string | undefined {
   switch (mime) {
     case "image/jpeg":
+    case "image/jpg":
       return "jpeg";
     case "image/gif":
       return "gif";
@@ -154,6 +156,16 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null
 
   if (node.tag === "EXID") {
     return mapExidNode(node, diagnostics);
+  }
+
+  if (node.tag === "DATE") {
+    return mapGedcom7DateNodeTo551(
+      {
+        ...node,
+        children: node.children.map((child) => mapNode(child, diagnostics)).filter((child): child is GedcomNode => child !== null)
+      },
+      diagnostics
+    );
   }
 
   if (node.tag === "MIME") {
