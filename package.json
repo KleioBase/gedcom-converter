@@ -42,7 +42,8 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "convert:file": "npm run build && node scripts/convert-ged-file.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
