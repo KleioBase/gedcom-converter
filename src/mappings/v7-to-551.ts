@@ -1,6 +1,37 @@
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 import { mapGedcom7DateNodeTo551 } from "./date/v7-to-551.js";
 
+interface MappingContext {
+  rootTag: string;
+  parentTag?: string;
+  grandParentTag?: string;
+}
+
+const ROLE_TEXT_ALIASES: Record<string, string> = {
+  CHIL: "Child",
+  CLERGY: "Clergy",
+  FATH: "Father",
+  FRIEND: "Friend",
+  GODP: "Godparent",
+  HUSB: "Husband",
+  MOTH: "Mother",
+  MULTIPLE: "Multiple",
+  NGHBR: "Neighbor",
+  OFFICIATOR: "Officiator",
+  PARENT: "Parent",
+  SPOU: "Spouse",
+  WIFE: "Wife",
+  WITN: "Witness"
+};
+
+function extendMappingContext(context: MappingContext, parentTag: string): MappingContext {
+  return {
+    rootTag: context.rootTag,
+    parentTag,
+    ...(context.parentTag !== undefined ? { grandParentTag: context.parentTag } : {})
+  };
+}
+
 function cloneNode(node: GedcomNode): GedcomNode {
   return {
     ...node,
@@ -58,6 +89,40 @@ function mapMimeToForm(mime: string | undefined): string | undefined {
   }
 }
 
+function mapGedcom7NameTypeTo551(value: string | undefined): string | undefined {
+  switch (value) {
+    case "AKA":
+      return "aka";
+    case "BIRTH":
+      return "birth";
+    case "IMMIGRANT":
+      return "immigrant";
+    case "MAIDEN":
+      return "maiden";
+    case "MARRIED":
+      return "married";
+    default:
+      return value;
+  }
+}
+
+function humanizeEnumValue(value: string | undefined): string | undefined {
+  if (!value) {
+    return value;
+  }
+
+  if (ROLE_TEXT_ALIASES[value]) {
+    return ROLE_TEXT_ALIASES[value];
+  }
+
+  return value
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter((token) => token.length > 0)
+    .map((token) => token[0]!.toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
 function inferMediaType(mime: string | undefined): string | undefined {
   if (!mime) {
     return undefined;
@@ -80,17 +145,15 @@ function inferMediaType(mime: string | undefined): string | undefined {
 
 function mapRoleToRela(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const phrase = node.children.find((child) => child.tag === "PHRASE")?.value;
-  let value = node.value;
+  let value = humanizeEnumValue(node.value);
 
-  if (value === "WITN") {
-    value = "Witness";
-  } else if (value === "OTHER" && phrase) {
+  if (node.value === "OTHER" && phrase) {
     value = phrase;
   } else if (value) {
     diagnostics.push({
-      severity: "warning",
+      severity: "info",
       code: "ROLE_TO_RELA_FALLBACK",
-      message: `Mapped GEDCOM 7 ROLE ${value} to GEDCOM 5.5.1 RELA text.`,
+      message: `Mapped GEDCOM 7 ROLE ${node.value} to GEDCOM 5.5.1 RELA text ${value}.`,
       location: withOptionalLocation(node)
     });
   }
@@ -103,7 +166,47 @@ function mapRoleToRela(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode 
   });
 }
 
-function mapExidNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+function mapRoleToSourceCitationRole(node: GedcomNode): GedcomNode {
+  const phrase = node.children.find((child) => child.tag === "PHRASE")?.value;
+
+  const supportedRole = (() => {
+    switch (node.value) {
+      case "CHIL":
+      case "HUSB":
+      case "WIFE":
+      case "MOTH":
+      case "FATH":
+      case "SPOU":
+        return node.value;
+      default:
+        return undefined;
+    }
+  })();
+
+  if (supportedRole) {
+    return makeNode({
+      level: node.level,
+      tag: "ROLE",
+      value: supportedRole,
+      children: []
+    });
+  }
+
+  const descriptor = phrase ?? humanizeEnumValue(node.value) ?? "Associated";
+
+  return makeNode({
+    level: node.level,
+    tag: "ROLE",
+    value: `(${descriptor})`,
+    children: []
+  });
+}
+
+function canMapExidToRefn(context: MappingContext, value: string): boolean {
+  return context.parentTag === undefined && context.rootTag !== "SUBM" && value.length > 0 && value.length <= 20;
+}
+
+function mapExidNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingContext): GedcomNode {
   const typeNode = node.children.find((child) => child.tag === "TYPE");
   const typeValue = typeNode?.value ?? "";
   const value = node.value ?? "";
@@ -120,12 +223,28 @@ function mapExidNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
     return makeNode({ level: node.level, tag: "RFN", value, children: [] });
   }
 
-  diagnostics.push({
-      severity: "warning",
-      code: "UNSUPPORTED_EXID",
-      message: `Unable to map EXID with TYPE ${typeValue || "<missing>"} to GEDCOM 5.5.1.`,
+  if (canMapExidToRefn(context, value)) {
+    diagnostics.push({
+      severity: "info",
+      code: "EXID_TO_REFN",
+      message: `Mapped EXID with TYPE ${typeValue || "<missing>"} to GEDCOM 5.5.1 REFN.`,
       location: withOptionalLocation(node)
     });
+
+    return makeNode({
+      level: node.level,
+      tag: "REFN",
+      value,
+      children: typeNode ? [cloneNode(typeNode)] : []
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: "EXID_PRESERVED",
+    message: `Preserved EXID with TYPE ${typeValue || "<missing>"} for later GEDCOM 5.5.1 compatibility handling.`,
+    location: withOptionalLocation(node)
+  });
 
   return makeNode({
     level: node.level,
@@ -135,7 +254,7 @@ function mapExidNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   });
 }
 
-function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null {
+function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingContext): GedcomNode | null {
   if (node.tag.startsWith("_")) {
     return cloneNode(node);
   }
@@ -146,26 +265,50 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null
       tag: "NOTE",
       ...(node.value !== undefined ? { value: node.value } : {}),
       ...(node.xref !== undefined ? { xref: node.xref } : {}),
-      children: node.children.map((child) => mapNode(child, diagnostics)).filter((child): child is GedcomNode => child !== null)
+      children: node.children
+        .map((child) =>
+          mapNode(child, diagnostics, extendMappingContext(context, node.tag))
+        )
+        .filter((child): child is GedcomNode => child !== null)
     });
   }
 
   if (node.tag === "ROLE") {
+    if (context.parentTag === "EVEN" && context.grandParentTag === "SOUR") {
+      return mapRoleToSourceCitationRole(node);
+    }
+
     return mapRoleToRela(node, diagnostics);
   }
 
   if (node.tag === "EXID") {
-    return mapExidNode(node, diagnostics);
+    return mapExidNode(node, diagnostics, context);
   }
 
   if (node.tag === "DATE") {
     return mapGedcom7DateNodeTo551(
       {
         ...node,
-        children: node.children.map((child) => mapNode(child, diagnostics)).filter((child): child is GedcomNode => child !== null)
+        children: node.children
+          .map((child) =>
+            mapNode(child, diagnostics, extendMappingContext(context, node.tag))
+          )
+          .filter((child): child is GedcomNode => child !== null)
       },
       diagnostics
     );
+  }
+
+  if (node.tag === "TYPE" && context.parentTag === "NAME") {
+    const phrase = node.children.find((child) => child.tag === "PHRASE")?.value;
+    const mappedValue = phrase ?? mapGedcom7NameTypeTo551(node.value);
+
+    return makeNode({
+      level: node.level,
+      tag: "TYPE",
+      ...(mappedValue !== undefined ? { value: mappedValue } : {}),
+      children: []
+    });
   }
 
   if (node.tag === "MIME") {
@@ -222,7 +365,7 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null
         continue;
       }
 
-      const mappedChild = mapNode(child, diagnostics);
+      const mappedChild = mapNode(child, diagnostics, extendMappingContext(context, node.tag));
       if (mappedChild) {
         mappedChildren.push(mappedChild);
       }
@@ -241,7 +384,11 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode | null
     tag: node.tag,
     ...(node.value !== undefined ? { value: node.value } : {}),
     ...(node.xref !== undefined ? { xref: node.xref } : {}),
-    children: node.children.map((child) => mapNode(child, diagnostics)).filter((child): child is GedcomNode => child !== null)
+    children: node.children
+      .map((child) =>
+        mapNode(child, diagnostics, extendMappingContext(context, node.tag))
+      )
+      .filter((child): child is GedcomNode => child !== null)
   });
 }
 
@@ -250,7 +397,9 @@ function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecor
 
   return {
     tag: mappedTag,
-    children: record.children.map((child) => mapNode(child, diagnostics)).filter((child): child is GedcomNode => child !== null),
+    children: record.children
+      .map((child) => mapNode(child, diagnostics, { rootTag: mappedTag }))
+      .filter((child): child is GedcomNode => child !== null),
     ...(record.xref !== undefined ? { xref: record.xref } : {}),
     ...(record.value !== undefined ? { value: record.value } : {})
   };
