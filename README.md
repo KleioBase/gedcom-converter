@@ -1,50 +1,39 @@
 # `@kleiobase/gedcom-converter`
 
-`@kleiobase/gedcom-converter` is a TypeScript-first library for reading, inspecting, normalizing, and converting GEDCOM files between versions.
+`@kleiobase/gedcom-converter` is a TypeScript library for reading and converting GEDCOM files.
 
-It is designed for projects that need to work with real genealogical data while staying practical about version differences, partial compatibility, and messy files from the wild.
+It is built for applications that need to work with real genealogy data across GEDCOM versions without silently emitting broken output.
 
-## What it is for
+## What it does
 
-Use this package when you need to:
+- detects GEDCOM versions from text or bytes
+- parses GEDCOM into a structured document model
+- stringifies parsed documents back into GEDCOM text
+- converts supported versions into other supported versions
+- preserves unsupported data as diagnostics or `_TAG` fallbacks when needed
 
-- detect which GEDCOM version a file uses
-- parse GEDCOM text into a structured document
-- convert supported GEDCOM versions into a different target version
-- serialize parsed documents back into GEDCOM text
-- preserve data safely when a feature has no clean equivalent in the target version
+Typical use cases:
 
-This makes it useful for:
-
-- genealogy apps and databases
-- migration utilities
-- import pipelines
-- archival or interoperability tooling
-- test harnesses for GEDCOM processing
-
-## Why use it
-
-- Library-first API: built to be embedded in your own app or scripts
-- TypeScript-friendly: strong exported types for documents, diagnostics, and conversion results
-- Version-aware: keeps parsing, mapping, and serialization separated by GEDCOM version
-- Safety-oriented: prefers valid output plus diagnostics over silently emitting invalid GEDCOM
-- Extension-preserving: unsupported or version-specific structures can be retained as `_TAG` data instead of being dropped
+- genealogy apps
+- import and migration pipelines
+- archival tooling
+- interoperability utilities
+- automated GEDCOM validation workflows
 
 ## Current support
 
-Supported today:
-
-- parse: `7.0.18`, `5.5.1`, and legacy `5.5`
-- stringify: `7.0.18` and `5.5.1`
+- parse: `7.0.18`, `5.5.1`, legacy `5.5`
+- stringify: `7.0.18`, `5.5.1`
 - convert:
   - `7.0.18 -> 5.5.1`
   - `5.5 -> 5.5.1`
 
-Planned direction:
+## Why use it
 
-- broader 7.x mapping coverage
-- reverse conversion paths
-- additional GEDCOM versions
+- TypeScript-first API with exported document and diagnostic types
+- version-aware parsing, mapping, and serialization
+- compatibility-focused conversion that favors valid GEDCOM over unsafe guesses
+- preservation of unsupported structures instead of silent data loss
 
 ## Install
 
@@ -69,109 +58,6 @@ const input = `0 HEAD
 0 @N1@ SNOTE Shared note
 0 TRLR`;
 
-const detected = detectGedcomVersion(input);
-
-const result = convertGedcom(input, {
-  from: detected === "unknown" ? "7.0.18" : detected,
-  to: "5.5.1"
-});
-
-console.log(result.output);
-console.log(result.diagnostics);
-```
-
-## API
-
-### `detectGedcomVersion(input)`
-
-Detects the source GEDCOM version from text or bytes.
-
-Returns:
-
-- `"7.0.18"`
-- `"5.5.1"`
-- `"5.5"`
-- `"unknown"`
-
-### `parseGedcom(input, { version? })`
-
-Parses GEDCOM text into a structured `ParsedDocument`.
-
-Use this when you want to inspect or transform a GEDCOM file without immediately converting it.
-
-### `stringifyGedcom(document, { version })`
-
-Serializes a parsed document back into GEDCOM text for the requested target version.
-
-### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
-
-Converts a GEDCOM file from one supported version to another and returns:
-
-- `output`: the converted GEDCOM text
-- `diagnostics`: warnings or errors about degraded or unsupported structures
-- `stats`: summary counts such as processed records and preserved extensions
-
-## How conversion behaves
-
-The converter is intentionally conservative.
-
-When a GEDCOM 7 structure maps cleanly into GEDCOM 5.5.1, it is converted into standard 5.5.1 tags.
-
-When it does not map cleanly, the converter prefers one of these outcomes:
-
-- preserve the original information as a user-defined `_TAG`
-- normalize the value into the closest valid 5.5.1 form
-- emit a diagnostic so your application can surface or review the loss
-
-This means the package optimizes first for:
-
-1. valid output
-2. data preservation
-3. diagnostics
-4. perfect semantic equivalence
-
-## Current conversion characteristics
-
-The current `7.0.18 -> 5.5.1` path includes:
-
-- GEDCOM version detection and parsing
-- continuation-line handling for GEDCOM 7 `CONT` and GEDCOM 5.x `CONT` / `CONC`
-- shared note conversion
-- partial date conversion
-- partial identifier conversion
-- partial multimedia conversion
-- compatibility cleanup for structures that GEDCOM 5.5.1 does not accept directly
-
-This does not mean every GEDCOM 7 construct has a lossless 5.5.1 equivalent yet.
-
-## Diagnostics
-
-Diagnostics are part of the normal conversion result and are important to consume.
-
-Common examples include:
-
-- unsupported identifiers
-- degraded date phrases
-- preserved extension data
-- dropped broken pointer references
-- structures demoted to `_TAG` for 5.5.1 compatibility
-
-If you need conversion to fail whenever warnings appear, use `strict: true`.
-
-## Example output workflow
-
-A common pattern is:
-
-1. detect the input version
-2. convert to the target version
-3. save the result
-4. inspect diagnostics
-
-```ts
-import { convertGedcom, detectGedcomVersion } from "@kleiobase/gedcom-converter";
-import { readFileSync, writeFileSync } from "node:fs";
-
-const input = readFileSync("input.ged", "utf8");
 const from = detectGedcomVersion(input);
 
 if (from === "unknown") {
@@ -183,43 +69,99 @@ const result = convertGedcom(input, {
   to: "5.5.1"
 });
 
-writeFileSync("output.ged", result.output, "utf8");
-
-for (const diagnostic of result.diagnostics) {
-  console.log(`${diagnostic.severity}: ${diagnostic.code} - ${diagnostic.message}`);
-}
+console.log(result.output);
+console.log(result.diagnostics);
 ```
 
-## Validation
+## API
 
-The project uses automated tests, focused fixtures, official GEDCOM sample files, and external validation tools as part of development.
+### `detectGedcomVersion(input)`
 
-The current 5.5.1 output has been validated against official sample data such as `maximal70.ged`, and generated output is checked for valid GEDCOM 5.5.1 structure rather than only internal test success.
+Returns one of:
 
-That said, GEDCOM conversion is not universally lossless. If a structure cannot be represented cleanly in the target version, this package will usually preserve it as `_TAG` data and surface diagnostics rather than silently discarding it.
+- `"7.0.18"`
+- `"5.5.1"`
+- `"5.5"`
+- `"unknown"`
 
-## Repository helper
+### `parseGedcom(input, { version? })`
 
-This repository also includes a local helper command for manually converting a file into a gitignored temp folder:
+Parses GEDCOM text into a `ParsedDocument`.
+
+### `stringifyGedcom(document, { version })`
+
+Serializes a parsed document into GEDCOM text for the requested version.
+
+### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
+
+Converts a GEDCOM file and returns:
+
+- `output`
+- `diagnostics`
+- `stats`
+
+## Conversion model
+
+The converter is intentionally conservative.
+
+When a structure maps cleanly into the target version, it is converted to a standard tag.
+
+When it does not, the converter prefers to:
+
+- preserve the information as `_TAG` data
+- normalize it into the closest valid target form
+- emit diagnostics so the caller can review what changed
+
+That means the package prioritizes:
+
+1. valid output
+2. data preservation
+3. explicit diagnostics
+
+over aggressive or lossy rewriting.
+
+## Diagnostics
+
+Diagnostics are part of normal conversion output. They are useful for:
+
+- unsupported identifiers
+- degraded date phrases
+- dropped broken pointer references
+- preserved extension data
+- compatibility-driven demotions to `_TAG`
+
+If you want warnings to fail conversion, use `strict: true`.
+
+## Local repository helper
+
+This repository includes a helper script for converting a real file into a gitignored temp folder:
 
 ```bash
 npm run convert:file -- fixtures/official/gedcom70/maximal70.ged
 ```
 
-That writes the converted file to:
+That writes to:
 
 ```text
 .tmp/generated/<input-name>.5.5.1.ged
 ```
 
-This helper is mainly for local validation and development of the package itself.
+This helper is for repository development and manual validation.
+
+## Validation status
+
+The current `7.0.18 -> 5.5.1` path is validated with automated tests, focused fixtures, official GEDCOM sample files, and external validation tools.
+
+Generated 5.5.1 output from the official `maximal70.ged` sample has been validated successfully in GED-inline.
+
+Validation does not mean all conversions are lossless. Some GEDCOM 7 constructs still need to be preserved as `_TAG` data when GEDCOM 5.5.1 has no clean equivalent.
 
 ## Limits
 
 - textual `.ged` files only
 - no CLI package yet
 - no GEDZIP support
-- reverse conversion is not implemented yet
+- reverse conversion not implemented yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
 
 ## References
