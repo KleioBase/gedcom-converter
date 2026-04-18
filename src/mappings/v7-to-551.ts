@@ -7,6 +7,23 @@ interface MappingContext {
   grandParentTag?: string;
 }
 
+const POINTER_TAGS = new Set([
+  "ALIA",
+  "ANCI",
+  "ASSO",
+  "CHIL",
+  "DESI",
+  "FAMC",
+  "FAMS",
+  "HUSB",
+  "NOTE",
+  "OBJE",
+  "REPO",
+  "SOUR",
+  "SUBM",
+  "WIFE"
+]);
+
 const ROLE_TEXT_ALIASES: Record<string, string> = {
   CHIL: "Child",
   CLERGY: "Clergy",
@@ -121,6 +138,151 @@ function humanizeEnumValue(value: string | undefined): string | undefined {
     .filter((token) => token.length > 0)
     .map((token) => token[0]!.toUpperCase() + token.slice(1))
     .join(" ");
+}
+
+function appendSourceCitationLine(
+  value: string | undefined,
+  pointer: string | undefined,
+  page: string | undefined
+): string {
+  const pieces = [`Source citation${pointer ? ` ${pointer}` : ""}`];
+  if (page) {
+    pieces.push(`Page ${page}`);
+  }
+
+  const line = `[${pieces.join(", ")}]`;
+  return value ? `${value}\n${line}` : line;
+}
+
+function labelForMissingPointerTag(tag: string): string {
+  switch (tag) {
+    case "ALIA":
+      return "Alias reference";
+    case "ANCI":
+      return "Ancestor-interest reference";
+    case "ASSO":
+      return "Association";
+    case "CHIL":
+      return "Child reference";
+    case "DESI":
+      return "Descendant-interest reference";
+    case "FAMC":
+      return "Family-as-child reference";
+    case "FAMS":
+      return "Family-as-spouse reference";
+    case "HUSB":
+      return "Husband reference";
+    case "NOTE":
+      return "Related note reference";
+    case "OBJE":
+      return "Multimedia reference";
+    case "REPO":
+      return "Repository reference";
+    case "SOUR":
+      return "Source citation";
+    case "SUBM":
+      return "Submitter reference";
+    case "WIFE":
+      return "Wife reference";
+    default:
+      return `${tag} reference`;
+  }
+}
+
+function buildMissingPointerNoteValue(node: GedcomNode): string {
+  const lines = [`${labelForMissingPointerTag(node.tag)}: ${node.value ?? "@VOID@"}`];
+
+  for (const child of node.children) {
+    if (!child.value && child.children.length === 0) {
+      continue;
+    }
+
+    if (child.tag === "PAGE") {
+      lines.push(`Page: ${child.value ?? ""}`);
+      continue;
+    }
+
+    if (child.tag === "NOTE" || child.tag === "SNOTE") {
+      if (child.value) {
+        lines.push(`${child.value.startsWith("@") ? "Related note" : "Note"}: ${child.value}`);
+      }
+      continue;
+    }
+
+    if (child.tag === "SOUR") {
+      const pageChild = child.children.find((grandchild) => grandchild.tag === "PAGE" && grandchild.value);
+      lines.push(appendSourceCitationLine(undefined, child.value, pageChild?.value));
+      continue;
+    }
+
+    if (child.tag === "ROLE") {
+      const phrase = child.children.find((grandchild) => grandchild.tag === "PHRASE" && grandchild.value)?.value;
+      lines.push(`Role: ${phrase ?? humanizeEnumValue(child.value) ?? ""}`);
+      continue;
+    }
+
+    if (child.tag === "PHRASE") {
+      lines.push(`Phrase: ${child.value ?? ""}`);
+      continue;
+    }
+
+    if (child.tag === "ADOP") {
+      lines.push(`Adoption: ${humanizeEnumValue(child.value) ?? ""}`);
+      const phrase = child.children.find((grandchild) => grandchild.tag === "PHRASE" && grandchild.value)?.value;
+      if (phrase) {
+        lines.push(`Phrase: ${phrase}`);
+      }
+      continue;
+    }
+
+    if (child.tag === "PEDI") {
+      lines.push(`Pedigree: ${humanizeEnumValue(child.value) ?? ""}`);
+      const phrase = child.children.find((grandchild) => grandchild.tag === "PHRASE" && grandchild.value)?.value;
+      if (phrase) {
+        lines.push(`Phrase: ${phrase}`);
+      }
+      continue;
+    }
+
+    if (child.tag === "STAT") {
+      lines.push(`Status: ${humanizeEnumValue(child.value) ?? ""}`);
+      const phrase = child.children.find((grandchild) => grandchild.tag === "PHRASE" && grandchild.value)?.value;
+      if (phrase) {
+        lines.push(`Phrase: ${phrase}`);
+      }
+      continue;
+    }
+
+    if (child.tag === "TITL") {
+      lines.push(`Title: ${child.value ?? ""}`);
+      continue;
+    }
+
+    if (child.tag === "TEMP") {
+      lines.push(`Temple: ${child.value ?? ""}`);
+      continue;
+    }
+
+    lines.push(`${humanizeEnumValue(child.tag) ?? child.tag}: ${child.value ?? ""}`);
+  }
+
+  return lines.join("\n");
+}
+
+function mapVoidPointerNodeToNote(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "VOID_POINTER_NOTED",
+    message: `Preserved ${node.tag} ${node.value ?? "@VOID@"} as note text for GEDCOM 5.5.1 compatibility.`,
+    location: withOptionalLocation(node)
+  });
+
+  return makeNode({
+    level: node.level,
+    tag: "NOTE",
+    value: buildMissingPointerNoteValue(node),
+    children: []
+  });
 }
 
 function inferMediaType(mime: string | undefined): string | undefined {
@@ -260,6 +422,16 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
   }
 
   if (node.tag === "SNOTE") {
+    if (node.value === "@VOID@") {
+      return mapVoidPointerNodeToNote(
+        {
+          ...node,
+          tag: "NOTE"
+        },
+        diagnostics
+      );
+    }
+
     return makeNode({
       level: node.level,
       tag: "NOTE",
@@ -271,6 +443,10 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
         )
         .filter((child): child is GedcomNode => child !== null)
     });
+  }
+
+  if (POINTER_TAGS.has(node.tag) && node.value === "@VOID@") {
+    return mapVoidPointerNodeToNote(node, diagnostics);
   }
 
   if (node.tag === "ROLE") {
