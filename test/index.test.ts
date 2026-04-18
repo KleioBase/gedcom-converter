@@ -138,6 +138,40 @@ describe("stringifyGedcom", () => {
     expect(output).not.toContain("0 @SUBM1@ SUBM");
   });
 
+  it("preserves supported HEAD metadata and notes when stringifying GEDCOM 5.5.1", () => {
+    const output = stringifyGedcom(
+      parseGedcom(readFixture("official/gedcom70/maximal70.ged"), { version: "7.0.18" }),
+      { version: "5.5.1" }
+    );
+
+    expect(output).toContain("1 SOUR https://gedcom.io/");
+    expect(output).toContain("2 VERS 0.4");
+    expect(output).toContain("2 NAME GEDCOM Steering Committee");
+    expect(output).toContain("2 CORP FamilySearch");
+    expect(output).toContain("2 DATA HEAD-SOUR-DATA");
+    expect(output).toContain("3 DATE 1 NOV 2022");
+    expect(output).toContain("1 DEST https://gedcom.io/");
+    expect(output).toContain("1 DATE 10 JUN 2022");
+    expect(output).toContain("2 TIME 15:43:20.48");
+    expect(output).toContain("1 COPR another copyright statement");
+    expect(output).toContain("1 NOTE This file is intended to provide coverage");
+    expect(output).toContain("[Translation] Diese Datei soll Teile der Spezifikation abdecken");
+    expect(output).toContain("Transmission time zone: Z");
+    expect(output).toContain("Schema tag: _SKYPEID http://xmlns.com/foaf/0.1/skypeID");
+  });
+
+  it("normalizes unsupported header time zone suffixes into legal GEDCOM 5.5.1 TIME values", () => {
+    const output = stringifyGedcom(
+      parseGedcom(readFixture("official/gedcom70/maximal70.ged"), { version: "7.0.18" }),
+      { version: "5.5.1" }
+    );
+
+    expect(output).toContain("1 DATE 10 JUN 2022");
+    expect(output).toContain("2 TIME 15:43:20.48");
+    expect(output).not.toContain("2 TIME 15:43:20.48Z");
+    expect(output).toContain("Transmission time zone: Z");
+  });
+
   it("preserves HEAD.PLAC.FORM when stringifying GEDCOM 5.5.1", () => {
     const document = parseGedcom(`0 HEAD
 1 SOUR KleioBase
@@ -346,9 +380,10 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 REFN 123");
     expect(result.output).toContain("2 TYPE UUID");
     expect(result.output).toContain("1 NOTE No DIV");
+    expect(result.output).toContain("1 NOTE Association: @VOID@");
     expect(result.output).toContain("1 SEX U");
     expect(result.output).not.toContain("1 ASSO @VOID@");
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DROPPED_MISSING_POINTER")).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "VOID_POINTER_NOTED")).toBe(true);
   });
 
   it("rewrites NO structures as legal notes with date and citation context", () => {
@@ -1388,8 +1423,8 @@ describe("convertGedcom", () => {
 
     expect(notes.diagnostics).toHaveLength(0);
     expect(memories.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      "DROPPED_MISSING_POINTER",
-      "DROPPED_MISSING_POINTER",
+      "VOID_POINTER_NOTED",
+      "VOID_POINTER_NOTED",
       "FILE_REFERENCE_NOTED",
       "FILE_FORMAT_NOTED",
       "FILE_REFERENCE_NOTED",
@@ -1455,8 +1490,12 @@ describe("convertGedcom", () => {
     expect(result.output).not.toMatch(/\n\d+ _CREA\b/);
     expect(result.output).not.toMatch(/\n\d+ TRAN\b/);
     expect(result.output).not.toMatch(/\n\d+ PHRASE\b/);
-    expect(result.output).not.toContain("@VOID@");
     expect(result.output).not.toContain(" FORM jpeg");
     expect(result.output).not.toContain(" TYPE other");
+    expect(result.output).toContain("Second child");
+    expect(result.output).toContain("Mr Stockdale");
+    expect(result.output).toContain("Adoption phrase");
+    expect(result.output).toContain("copyright statement");
+    expect(result.output).toContain("HEAD-SOUR-DATA");
   });
 });
