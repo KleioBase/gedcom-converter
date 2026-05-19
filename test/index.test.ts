@@ -240,6 +240,53 @@ describe("stringifyGedcom", () => {
 });
 
 describe("convertGedcom", () => {
+  it("converts a minimal GEDCOM 5.5.1 document to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 DEST KleioBase Test
+1 DATE 19 MAY 2026
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 SUBM @SUBM1@
+1 FILE sample.ged
+1 COPR Copyright
+1 CHAR UTF-8
+1 NOTE Header note
+1 PLAC
+2 FORM City, Country
+0 @I1@ INDI
+1 NAME John /Doe/
+1 _KLEIO custom
+0 @SUBM1@ SUBM
+1 NAME Submitter
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.version).toBe("7.0.18");
+    expect(result.output).toContain("2 VERS 7.0.18");
+    expect(result.output).toContain("1 SOUR KleioBase");
+    expect(result.output).toContain("1 DEST KleioBase Test");
+    expect(result.output).toContain("1 DATE 19 MAY 2026");
+    expect(result.output).toContain("1 SUBM @SUBM1@");
+    expect(result.output).toContain("1 FILE sample.ged");
+    expect(result.output).toContain("1 COPR Copyright");
+    expect(result.output).toContain("1 NOTE Header note");
+    expect(result.output).toContain("1 PLAC");
+    expect(result.output).toContain("2 FORM City, Country");
+    expect(result.output).toContain("1 SCHMA");
+    expect(result.output).toContain("2 TAG _KLEIO");
+    expect(result.output).toContain("0 @I1@ INDI");
+    expect(result.output).toContain("1 NAME John /Doe/");
+    expect(result.output).toContain("1 _KLEIO custom");
+    expect(result.output).not.toContain("1 CHAR UTF-8");
+    expect(result.output).not.toContain("2 FORM LINEAGE-LINKED");
+  });
+
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
     const result = convertGedcom(readFixture("conversion-7-to-551.ged"), {
       from: "7.0.18",

@@ -2,6 +2,14 @@ import type { GedcomNode, ParsedDocument } from "../types.js";
 import { stringifyGedcomTree } from "../utils/lines.js";
 import { GEDCOM7_VERSION } from "./schema.js";
 
+function cloneAtLevel(node: GedcomNode, level: number): GedcomNode {
+  return {
+    ...node,
+    level,
+    children: node.children.map((child) => cloneAtLevel(child, level + 1))
+  };
+}
+
 function toRootNode(record: ParsedDocument["records"][number]): GedcomNode {
   return {
     level: 0,
@@ -20,23 +28,31 @@ function resetRootLevel(node: GedcomNode): GedcomNode {
 }
 
 function buildHead(document: ParsedDocument): GedcomNode {
+  const rawChildren = document.header.raw.children.filter((child) => child.tag !== "CHAR" && child.tag !== "GEDC");
+  const sourceNode = rawChildren.some((child) => child.tag === "SOUR")
+    ? []
+    : [
+        {
+          level: 1,
+          tag: "SOUR",
+          value: document.header.sourceSystem ?? "KleioBase",
+          children: [
+            {
+              level: 2,
+              tag: "NAME",
+              value: document.header.sourceSystem ?? "KleioBase",
+              children: []
+            }
+          ]
+        }
+      ];
+
   return {
     level: 0,
     tag: "HEAD",
     children: [
-      {
-        level: 1,
-        tag: "SOUR",
-        value: document.header.sourceSystem ?? "KleioBase",
-        children: [
-          {
-            level: 2,
-            tag: "NAME",
-            value: document.header.sourceSystem ?? "KleioBase",
-            children: []
-          }
-        ]
-      },
+      ...sourceNode,
+      ...rawChildren.map((child) => cloneAtLevel(child, 1)),
       {
         level: 1,
         tag: "GEDC",

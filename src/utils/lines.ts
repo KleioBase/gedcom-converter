@@ -128,7 +128,7 @@ export function normalizeContinuationPayloads(nodes: GedcomNode[], mode: Continu
 }
 
 function encodeLineString(value: string, mode: ContinuationMode): string {
-  if (value.startsWith("@")) {
+  if (value.startsWith("@") && !/^@[^@\s]+@$/.test(value)) {
     return `@${value}`;
   }
 

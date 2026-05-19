@@ -5,6 +5,7 @@ import { stringifyGedcom551 } from "../gedcom551/serializer.js";
 import { parseGedcom7 } from "../gedcom7/parser.js";
 import { stringifyGedcom7 } from "../gedcom7/serializer.js";
 import { toIntermediateDocument } from "../ir/types.js";
+import { mapGedcom551DocumentToV7 } from "../mappings/551-to-v7.js";
 import { mapGedcom7DocumentTo551 } from "../mappings/v7-to-551.js";
 import type { ConversionResult, ConvertOptions, ParsedDocument } from "../types.js";
 
@@ -39,6 +40,8 @@ export function convertGedcom(input: string | Uint8Array, options: ConvertOption
     };
   } else if (intermediate.version === "7.0.18" && options.to === "5.5.1") {
     outputDocument = mapGedcom7DocumentTo551(intermediate);
+  } else if (intermediate.version === "5.5.1" && options.to === "7.0.18") {
+    outputDocument = mapGedcom551DocumentToV7(intermediate);
   } else {
     throw new ConversionError(`Conversion from ${options.from} to ${options.to} is not implemented yet.`);
   }
