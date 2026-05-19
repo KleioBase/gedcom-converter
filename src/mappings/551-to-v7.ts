@@ -1,6 +1,31 @@
 import type { GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 
+interface MappingContext {
+  parentTag?: string;
+}
+
 const PRESERVED_HEADER_TAGS = new Set(["SOUR", "DEST", "DATE", "SUBM", "COPR", "FILE", "NOTE", "PLAC"]);
+const GEDCOM7_NAME_TYPES = new Set(["AKA", "BIRTH", "IMMIGRANT", "MAIDEN", "MARRIED", "PROFESSIONAL", "OTHER"]);
+
+const GEDCOM551_NAME_TYPE_ALIASES: Record<string, string> = {
+  AKA: "AKA",
+  ALSO_KNOWN_AS: "AKA",
+  ALIAS: "AKA",
+  BIRTH: "BIRTH",
+  IMMIGRANT: "IMMIGRANT",
+  IMMIGRATION: "IMMIGRANT",
+  MAIDEN: "MAIDEN",
+  MARRIED: "MARRIED",
+  PROFESSIONAL: "PROFESSIONAL",
+  PROFESSION: "PROFESSIONAL",
+  OTHER: "OTHER"
+};
+
+function extendMappingContext(parentTag: string): MappingContext {
+  return {
+    parentTag
+  };
+}
 
 function cloneNode(node: GedcomNode): GedcomNode {
   return {
@@ -31,6 +56,48 @@ function makeNode(base: {
     ...(base.value !== undefined ? { value: base.value } : {}),
     ...(base.xref !== undefined ? { xref: base.xref } : {})
   };
+}
+
+function normalizeNameTypeToken(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function mapGedcom551NameTypeToV7(value: string | undefined): GedcomNode["value"] {
+  if (!value) {
+    return value;
+  }
+
+  const normalized = normalizeNameTypeToken(value);
+  return GEDCOM551_NAME_TYPE_ALIASES[normalized] ?? (GEDCOM7_NAME_TYPES.has(normalized) ? normalized : undefined);
+}
+
+function mapNameTypeNode(node: GedcomNode): GedcomNode {
+  const mappedValue = mapGedcom551NameTypeToV7(node.value);
+
+  if (mappedValue) {
+    return makeNode({
+      level: node.level,
+      tag: "TYPE",
+      value: mappedValue,
+      children: []
+    });
+  }
+
+  return makeNode({
+    level: node.level,
+    tag: "TYPE",
+    value: "OTHER",
+    children: node.value
+      ? [
+          makeNode({
+            level: node.level + 1,
+            tag: "PHRASE",
+            value: node.value,
+            children: []
+          })
+        ]
+      : []
+  });
 }
 
 function collectCustomTagsFromNode(node: GedcomNode, tags: Set<string>): void {
@@ -119,10 +186,24 @@ function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
   };
 }
 
+function mapNode(node: GedcomNode, context: MappingContext): GedcomNode {
+  if (node.tag === "TYPE" && context.parentTag === "NAME") {
+    return mapNameTypeNode(node);
+  }
+
+  return makeNode({
+    level: node.level,
+    tag: node.tag,
+    children: node.children.map((child) => mapNode(child, extendMappingContext(node.tag))),
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    ...(node.xref !== undefined ? { xref: node.xref } : {})
+  });
+}
+
 function mapRecord(record: ParsedRecord): ParsedRecord {
   return {
     tag: record.tag,
-    children: record.children.map(cloneNode),
+    children: record.children.map((child) => mapNode(child, {})),
     ...(record.xref !== undefined ? { xref: record.xref } : {}),
     ...(record.value !== undefined ? { value: record.value } : {})
   };

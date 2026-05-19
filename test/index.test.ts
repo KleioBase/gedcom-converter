@@ -287,6 +287,75 @@ describe("convertGedcom", () => {
     expect(result.output).not.toContain("2 FORM LINEAGE-LINKED");
   });
 
+  it("maps GEDCOM 5.5.1 personal name structures to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Dr. John /Doe/ Jr.
+2 NPFX Dr.
+2 GIVN John
+2 SURN Doe
+2 NSFX Jr.
+2 TYPE Maiden
+1 NAME Johnny /Doe/
+2 NICK Johnny
+2 TYPE nickname at school
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 NAME Dr. John /Doe/ Jr.");
+    expect(result.output).toContain("2 NPFX Dr.");
+    expect(result.output).toContain("2 GIVN John");
+    expect(result.output).toContain("2 SURN Doe");
+    expect(result.output).toContain("2 NSFX Jr.");
+    expect(result.output).toContain("2 TYPE MAIDEN");
+    expect(result.output).toContain("1 NAME Johnny /Doe/");
+    expect(result.output).toContain("2 NICK Johnny");
+    expect(result.output).toContain("2 TYPE OTHER");
+    expect(result.output).toContain("3 PHRASE nickname at school");
+  });
+
+  it("round-trips GEDCOM 5.5.1 personal name type text through GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Example/
+2 GIVN Jane
+2 SURN Example
+2 TYPE maiden
+1 NAME J /Example/
+2 TYPE nickname at school
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("1 NAME Jane /Example/");
+    expect(roundTripped.output).toContain("2 GIVN Jane");
+    expect(roundTripped.output).toContain("2 SURN Example");
+    expect(roundTripped.output).toContain("2 TYPE maiden");
+    expect(roundTripped.output).toContain("1 NAME J /Example/");
+    expect(roundTripped.output).toContain("2 TYPE nickname at school");
+  });
+
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
     const result = convertGedcom(readFixture("conversion-7-to-551.ged"), {
       from: "7.0.18",
