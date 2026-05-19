@@ -1498,4 +1498,38 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("copyright statement");
     expect(result.output).toContain("HEAD-SOUR-DATA");
   });
+
+  it("preserves key maximal70 source content even when 5.5.1 requires structural rewriting", () => {
+    const result = convertGedcom(readFixture("official/gedcom70/maximal70.ged"), {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    const mustPreserve = [
+      "This file is intended to provide coverage of parts of the specification and does not contain meaningful historical or genealogical data.",
+      "Diese Datei soll Teile der Spezifikation abdecken",
+      "HEAD-SOUR-DATA",
+      "copyright statement",
+      "another copyright statement",
+      "1 NOV 2022",
+      "8:38",
+      "10 JUN 2022",
+      "15:43:20.48",
+      "Transmission time zone: Z",
+      "Entire source",
+      "Second child",
+      "Clergy",
+      "Adoption phrase",
+      "Mr Stockdale",
+      "Challenged",
+      "Foster",
+      "Sealing",
+      "Other type",
+      "Phrase"
+    ];
+
+    for (const value of mustPreserve) {
+      expect(result.output).toContain(value);
+    }
+  });
 });

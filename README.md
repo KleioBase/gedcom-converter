@@ -1,5 +1,7 @@
 # `@kleiobase/gedcom-converter`
 
+[![CI](https://github.com/KleioBase/gedcom-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/KleioBase/gedcom-converter/actions/workflows/ci.yml)
+
 `@kleiobase/gedcom-converter` is a TypeScript library for reading and converting GEDCOM files.
 
 It is built for applications that need to work with real genealogy data across GEDCOM versions without silently emitting broken output.
