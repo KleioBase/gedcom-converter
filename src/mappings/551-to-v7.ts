@@ -39,6 +39,31 @@ const VALID_LDS_STAT_VALUES = new Set([
   "UNCLEARED"
 ]);
 
+// v7 §3.4 enumset-MEDI (spec p.96–97). Uppercase enum; 5.5.1 stored the same
+// values in lowercase. Unknown values fall back to OTHER + PHRASE.
+const VALID_MEDI_VALUES = new Set([
+  "AUDIO",
+  "BOOK",
+  "CARD",
+  "ELECTRONIC",
+  "FICHE",
+  "FILM",
+  "MAGAZINE",
+  "MANUSCRIPT",
+  "MAP",
+  "NEWSPAPER",
+  "PHOTO",
+  "TOMBSTONE",
+  "VIDEO",
+  "OTHER"
+]);
+
+// URIs chosen so the existing mapExidNode in src/mappings/v7-to-551.ts
+// (which dispatches on `/RIN` and `/RFN#` substrings) round-trips them back
+// to the original 5.5.1 tag. Keep these endings stable.
+const RIN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RIN";
+const RFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RFN#";
+
 interface ParsedAgePayload {
   bound?: "<" | ">";
   years?: number;
@@ -614,6 +639,87 @@ function mapSourceCitationRoleNode(node: GedcomNode, diagnostics: Diagnostic[]):
   return buildRoleNode(node, node.value, diagnostics, "CITATION_ROLE_PHRASE_FALLBACK");
 }
 
+function mapMediNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  const raw = node.value?.trim();
+  if (!raw) {
+    return makeNode({ level: node.level, tag: "MEDI", children: node.children.map(cloneNode) });
+  }
+
+  const upper = raw.toUpperCase();
+  if (VALID_MEDI_VALUES.has(upper)) {
+    return makeNode({
+      level: node.level,
+      tag: "MEDI",
+      value: upper,
+      children: node.children.map(cloneNode)
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: "MEDI_PHRASE_FALLBACK",
+    message: `Unable to map GEDCOM 5.5.1 MEDI value ${raw} to a GEDCOM 7 enum; emitted OTHER + PHRASE.`,
+    location: withOptionalLocation(node)
+  });
+
+  const existingChildren = node.children.map(cloneNode);
+  const hasPhrase = existingChildren.some((child) => child.tag === "PHRASE");
+  const children = hasPhrase
+    ? existingChildren
+    : [
+        ...existingChildren,
+        makeNode({
+          level: node.level + 1,
+          tag: "PHRASE",
+          value: raw,
+          children: []
+        })
+      ];
+
+  return makeNode({
+    level: node.level,
+    tag: "MEDI",
+    value: "OTHER",
+    children
+  });
+}
+
+function makeIdentifierExidNode(node: GedcomNode, typeUri: string): GedcomNode {
+  return makeNode({
+    level: node.level,
+    tag: "EXID",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: [
+      makeNode({
+        level: node.level + 1,
+        tag: "TYPE",
+        value: typeUri,
+        children: []
+      })
+    ]
+  });
+}
+
+function mapRinNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "RIN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 RIN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (RIN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, RIN_EXID_TYPE_URI);
+}
+
+function mapRfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "RFN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 RFN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (RFN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, RFN_EXID_TYPE_URI);
+}
+
 function promoteNoteRecordsToSnote(records: ParsedRecord[], diagnostics: Diagnostic[]): { records: ParsedRecord[]; promoted: Set<string> } {
   const promoted = new Set<string>();
   const rewritten = records.map((record) => {
@@ -679,6 +785,18 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "ROLE" && context.parentTag === "EVEN" && context.grandParentTag === "SOUR") {
     return mapSourceCitationRoleNode(node, diagnostics);
+  }
+
+  if (node.tag === "MEDI") {
+    return mapMediNode(node, diagnostics);
+  }
+
+  if (node.tag === "RIN") {
+    return mapRinNode(node, diagnostics);
+  }
+
+  if (node.tag === "RFN") {
+    return mapRfnNode(node, diagnostics);
   }
 
   return makeNode({

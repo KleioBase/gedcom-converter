@@ -1084,10 +1084,13 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 PUBL 1923, Boston Press");
     expect(result.output).toContain("1 TEXT Source full text excerpt");
     expect(result.output).toContain("1 REFN VR-1923");
-    expect(result.output).toContain("1 RIN 4242");
+    expect(result.output).toContain("1 EXID 4242");
+    expect(result.output).toContain("2 TYPE https://kleiobase.io/terms/legacy/551/RIN");
     expect(result.output).toContain("1 REPO @R1@");
     expect(result.output).toContain("2 CALN 929.3 Smi");
-    expect(result.output).toContain("3 MEDI book");
+    expect(result.output).toContain("3 MEDI BOOK");
+    expect(result.output).not.toContain("3 MEDI book");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RIN_TO_EXID")).toBe(true);
   });
 
   it("preserves an inline GEDCOM 5.5.1 source citation with PAGE/EVEN/DATA/QUAY into GEDCOM 7", () => {
@@ -1162,7 +1165,9 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 EMAIL archives@example.org");
     expect(result.output).toContain("1 WWW https://archives.example.org");
     expect(result.output).toContain("1 REFN BA-001");
-    expect(result.output).toContain("1 RIN 7");
+    expect(result.output).toContain("1 EXID 7");
+    expect(result.output).toContain("2 TYPE https://kleiobase.io/terms/legacy/551/RIN");
+    expect(result.output).not.toContain("1 RIN 7");
   });
 
   it("preserves a GEDCOM 5.5.1 SUBM record substructure into GEDCOM 7", () => {
@@ -1200,8 +1205,12 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 EMAIL andres@example.org");
     expect(result.output).toContain("1 WWW https://example.org");
     expect(result.output).toContain("1 LANG English");
-    expect(result.output).toContain("1 RFN SUB-1");
-    expect(result.output).toContain("1 RIN 1");
+    expect(result.output).toContain("1 EXID SUB-1");
+    expect(result.output).toContain("2 TYPE https://kleiobase.io/terms/legacy/551/RFN#");
+    expect(result.output).toContain("1 EXID 1");
+    expect(result.output).toContain("2 TYPE https://kleiobase.io/terms/legacy/551/RIN");
+    expect(result.output).not.toContain("1 RFN SUB-1");
+    expect(result.output).not.toContain("1 RIN 1");
   });
 
   it("round-trips a GEDCOM 5.5.1 ASSO with non-enum RELA through GEDCOM 7 and back", () => {
@@ -1256,6 +1265,75 @@ describe("convertGedcom", () => {
 
     expect(roundTripped.output).toContain("0 @N1@ NOTE Shared note text");
     expect(roundTripped.output).toContain("1 NOTE @N1@");
+  });
+
+  it("round-trips a GEDCOM 5.5.1 source citation combining PAGE, QUAY, and ROLE through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 SOUR @S1@
+3 PAGE Vol. 2, p. 14
+3 EVEN BIRT
+4 ROLE Father
+3 QUAY 3
+0 @S1@ SOUR
+1 TITL Parish register
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("2 SOUR @S1@");
+    expect(roundTripped.output).toContain("3 PAGE Vol. 2, p. 14");
+    expect(roundTripped.output).toContain("3 EVEN BIRT");
+    // ROLE round-trips value-preserving but case-asymmetric: 5.5.1 "Father" →
+    // v7 "FATH" → 5.5.1 "FATH". The v7→5.5.1 mapRoleToSourceCitationRole
+    // preserves the v7 enum verbatim by design.
+    expect(roundTripped.output).toContain("4 ROLE FATH");
+    expect(roundTripped.output).toContain("3 QUAY 3");
+  });
+
+  it("round-trips a GEDCOM 5.5.1 REPO citation with CALN/MEDI through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @S1@ SOUR
+1 TITL Parish register
+1 REPO @R1@
+2 CALN 929.3 Smi
+3 MEDI book
+0 @R1@ REPO
+1 NAME Boston Archives
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("1 REPO @R1@");
+    expect(roundTripped.output).toContain("2 CALN 929.3 Smi");
+    // MEDI round-trips value-preserving but case-asymmetric: 5.5.1 "book" →
+    // v7 enum "BOOK" → 5.5.1 "BOOK". v7→5.5.1 preserves the v7 enum verbatim.
+    expect(roundTripped.output).toContain("3 MEDI BOOK");
   });
 
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
