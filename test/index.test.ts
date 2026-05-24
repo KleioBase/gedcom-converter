@@ -865,6 +865,399 @@ describe("convertGedcom", () => {
     expect(roundTripped.output).toContain("2 AGE 0y");
   });
 
+  it("maps a GEDCOM 5.5.1 ASSO with an enum-matching RELA to a GEDCOM 7 ROLE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 ASSO @I2@
+2 RELA Father
+0 @I2@ INDI
+1 NAME John /Doe/
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 ASSO @I2@");
+    expect(result.output).toContain("2 ROLE FATH");
+    expect(result.output).not.toContain("2 RELA Father");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RELA_PHRASE_FALLBACK")).toBe(false);
+  });
+
+  it("falls back to ROLE OTHER + PHRASE for a non-enum 5.5.1 ASSO RELA", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 ASSO @I2@
+2 RELA Best friend
+0 @I2@ INDI
+1 NAME John /Doe/
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 ASSO @I2@");
+    expect(result.output).toContain("2 ROLE OTHER");
+    expect(result.output).toContain("3 PHRASE Best friend");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RELA_PHRASE_FALLBACK")).toBe(true);
+  });
+
+  it("synthesizes GEDCOM 7 ASSO ROLE OTHER when 5.5.1 source omits RELA", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 ASSO @I2@
+0 @I2@ INDI
+1 NAME John /Doe/
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 ASSO @I2@");
+    expect(result.output).toContain("2 ROLE OTHER");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "ASSO_ROLE_SYNTHESIZED")).toBe(true);
+  });
+
+  it("promotes a top-level GEDCOM 5.5.1 NOTE record to a GEDCOM 7 SNOTE record and rewrites inline pointers", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @N1@ NOTE Shared note text
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 NOTE @N1@
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("0 @N1@ SNOTE Shared note text");
+    expect(result.output).toContain("1 SNOTE @N1@");
+    expect(result.output).not.toContain("0 @N1@ NOTE");
+    expect(result.output).not.toContain("1 NOTE @N1@");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "NOTE_RECORD_PROMOTED")).toBe(true);
+  });
+
+  it("leaves inline 5.5.1 NOTE substructures with literal payload as GEDCOM 7 NOTE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 NOTE Inline note text
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 NOTE Inline note text");
+    expect(result.output).not.toContain("1 SNOTE Inline note text");
+  });
+
+  it("maps a GEDCOM 5.5.1 source-citation ROLE under SOUR.EVEN to a GEDCOM 7 ROLE enum", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 SOUR @S1@
+3 PAGE 12
+3 EVEN BIRT
+4 ROLE Father
+0 @S1@ SOUR
+1 TITL Parish register
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("3 EVEN BIRT");
+    expect(result.output).toContain("4 ROLE FATH");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "CITATION_ROLE_PHRASE_FALLBACK")).toBe(false);
+  });
+
+  it("falls back to ROLE OTHER + PHRASE for a non-enum source-citation ROLE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 SOUR @S1@
+3 EVEN BIRT
+4 ROLE Family lawyer
+0 @S1@ SOUR
+1 TITL Parish register
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("4 ROLE OTHER");
+    expect(result.output).toContain("5 PHRASE Family lawyer");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "CITATION_ROLE_PHRASE_FALLBACK")).toBe(true);
+  });
+
+  it("preserves a GEDCOM 5.5.1 SOUR record substructure into GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @S1@ SOUR
+1 DATA
+2 EVEN BIRT, DEAT
+3 DATE FROM 1800 TO 1900
+3 PLAC Boston, Massachusetts
+2 AGNC County clerk
+1 AUTH John Smith
+1 TITL Vital Records of Boston
+1 ABBR VR Boston
+1 PUBL 1923, Boston Press
+1 TEXT Source full text excerpt
+1 REFN VR-1923
+1 RIN 4242
+1 REPO @R1@
+2 CALN 929.3 Smi
+3 MEDI book
+0 @R1@ REPO
+1 NAME Boston Archives
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("0 @S1@ SOUR");
+    expect(result.output).toContain("1 DATA");
+    expect(result.output).toContain("2 EVEN BIRT, DEAT");
+    expect(result.output).toContain("3 DATE FROM 1800 TO 1900");
+    expect(result.output).toContain("3 PLAC Boston, Massachusetts");
+    expect(result.output).toContain("2 AGNC County clerk");
+    expect(result.output).toContain("1 AUTH John Smith");
+    expect(result.output).toContain("1 TITL Vital Records of Boston");
+    expect(result.output).toContain("1 ABBR VR Boston");
+    expect(result.output).toContain("1 PUBL 1923, Boston Press");
+    expect(result.output).toContain("1 TEXT Source full text excerpt");
+    expect(result.output).toContain("1 REFN VR-1923");
+    expect(result.output).toContain("1 RIN 4242");
+    expect(result.output).toContain("1 REPO @R1@");
+    expect(result.output).toContain("2 CALN 929.3 Smi");
+    expect(result.output).toContain("3 MEDI book");
+  });
+
+  it("preserves an inline GEDCOM 5.5.1 source citation with PAGE/EVEN/DATA/QUAY into GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 SOUR @S1@
+3 PAGE Vol. 2, p. 14
+3 EVEN BIRT
+4 DATE 12 MAR 1880
+3 DATA
+4 DATE 12 MAR 1880
+4 TEXT Verbatim citation text
+3 QUAY 3
+0 @S1@ SOUR
+1 TITL Parish register
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 SOUR @S1@");
+    expect(result.output).toContain("3 PAGE Vol. 2, p. 14");
+    expect(result.output).toContain("3 EVEN BIRT");
+    expect(result.output).toContain("4 DATE 12 MAR 1880");
+    expect(result.output).toContain("3 DATA");
+    expect(result.output).toContain("4 TEXT Verbatim citation text");
+    expect(result.output).toContain("3 QUAY 3");
+  });
+
+  it("preserves a GEDCOM 5.5.1 REPO record substructure into GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @R1@ REPO
+1 NAME Boston Archives
+1 ADDR 100 Archive Way
+2 CITY Boston
+2 STAE MA
+2 POST 02101
+2 CTRY USA
+1 PHON +1-617-555-0100
+1 EMAIL archives@example.org
+1 WWW https://archives.example.org
+1 REFN BA-001
+1 RIN 7
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("0 @R1@ REPO");
+    expect(result.output).toContain("1 NAME Boston Archives");
+    expect(result.output).toContain("1 ADDR 100 Archive Way");
+    expect(result.output).toContain("2 CITY Boston");
+    expect(result.output).toContain("2 STAE MA");
+    expect(result.output).toContain("2 POST 02101");
+    expect(result.output).toContain("2 CTRY USA");
+    expect(result.output).toContain("1 PHON +1-617-555-0100");
+    expect(result.output).toContain("1 EMAIL archives@example.org");
+    expect(result.output).toContain("1 WWW https://archives.example.org");
+    expect(result.output).toContain("1 REFN BA-001");
+    expect(result.output).toContain("1 RIN 7");
+  });
+
+  it("preserves a GEDCOM 5.5.1 SUBM record substructure into GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 SUBM @SUBM1@
+1 CHAR UTF-8
+0 @SUBM1@ SUBM
+1 NAME Andres Denkberg
+1 ADDR 1 Main St
+2 CITY Boston
+2 CTRY USA
+1 PHON +1-617-555-0101
+1 EMAIL andres@example.org
+1 WWW https://example.org
+1 LANG English
+1 RFN SUB-1
+1 RIN 1
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("0 @SUBM1@ SUBM");
+    expect(result.output).toContain("1 NAME Andres Denkberg");
+    expect(result.output).toContain("1 ADDR 1 Main St");
+    expect(result.output).toContain("2 CITY Boston");
+    expect(result.output).toContain("2 CTRY USA");
+    expect(result.output).toContain("1 PHON +1-617-555-0101");
+    expect(result.output).toContain("1 EMAIL andres@example.org");
+    expect(result.output).toContain("1 WWW https://example.org");
+    expect(result.output).toContain("1 LANG English");
+    expect(result.output).toContain("1 RFN SUB-1");
+    expect(result.output).toContain("1 RIN 1");
+  });
+
+  it("round-trips a GEDCOM 5.5.1 ASSO with non-enum RELA through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 ASSO @I2@
+2 RELA Best friend
+0 @I2@ INDI
+1 NAME John /Doe/
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("1 ASSO @I2@");
+    expect(roundTripped.output).toContain("2 RELA Best friend");
+  });
+
+  it("round-trips a top-level GEDCOM 5.5.1 NOTE record + inline pointer through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @N1@ NOTE Shared note text
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 NOTE @N1@
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("0 @N1@ NOTE Shared note text");
+    expect(roundTripped.output).toContain("1 NOTE @N1@");
+  });
+
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
     const result = convertGedcom(readFixture("conversion-7-to-551.ged"), {
       from: "7.0.18",
