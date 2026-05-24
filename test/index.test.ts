@@ -356,6 +356,289 @@ describe("convertGedcom", () => {
     expect(roundTripped.output).toContain("2 TYPE nickname at school");
   });
 
+  it("maps a GEDCOM 5.5.1 individual event with full substructure to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 DATE 12 MAR 1880
+2 PLAC Boston, Suffolk, Massachusetts, USA
+3 FORM City, County, State, Country
+2 ADDR 12 Main St
+3 CITY Boston
+3 STAE MA
+3 POST 02108
+3 CTRY USA
+2 AGE 0y
+2 CAUS Natural
+2 AGNC County clerk
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.version).toBe("7.0.18");
+    expect(result.output).toContain("1 BIRT");
+    expect(result.output).toContain("2 DATE 12 MAR 1880");
+    expect(result.output).toContain("2 PLAC Boston, Suffolk, Massachusetts, USA");
+    expect(result.output).toContain("3 FORM City, County, State, Country");
+    expect(result.output).toContain("2 ADDR 12 Main St");
+    expect(result.output).toContain("3 CITY Boston");
+    expect(result.output).toContain("3 STAE MA");
+    expect(result.output).toContain("3 POST 02108");
+    expect(result.output).toContain("3 CTRY USA");
+    expect(result.output).toContain("2 AGE 0y");
+    expect(result.output).toContain("2 CAUS Natural");
+    expect(result.output).toContain("2 AGNC County clerk");
+  });
+
+  it("maps a GEDCOM 5.5.1 family event with custom EVEN TYPE to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @F1@ FAM
+1 EVEN
+2 TYPE Civil union
+2 DATE 14 FEB 2001
+2 PLAC Reykjavik, Iceland
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 EVEN");
+    expect(result.output).toContain("2 TYPE Civil union");
+    expect(result.output).toContain("2 DATE 14 FEB 2001");
+    expect(result.output).toContain("2 PLAC Reykjavik, Iceland");
+  });
+
+  it("maps a GEDCOM 5.5.1 individual attribute with payload to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 OCCU Farmer
+2 DATE FROM 1900 TO 1940
+2 PLAC Rural County, State
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 OCCU Farmer");
+    expect(result.output).toContain("2 DATE FROM 1900 TO 1940");
+    expect(result.output).toContain("2 PLAC Rural County, State");
+  });
+
+  it("moves a non-numeric GEDCOM 5.5.1 AGE keyword into a GEDCOM 7 PHRASE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 DEAT
+2 DATE 1 JAN 1900
+2 AGE STILLBORN
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 AGE");
+    expect(result.output).toContain("3 PHRASE STILLBORN");
+    expect(result.output).not.toContain("2 AGE STILLBORN");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "AGE_PHRASE_FALLBACK")).toBe(true);
+  });
+
+  it("preserves a numeric GEDCOM 5.5.1 AGE payload in GEDCOM 7 form", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 AGE 23y 4m
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 AGE 23y 4m");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "AGE_PHRASE_FALLBACK")).toBe(false);
+  });
+
+  it("maps a GEDCOM 5.5.1 LDS baptism with STAT to GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BAPL
+2 DATE 14 JUN 1985
+2 TEMP SLAKE
+2 PLAC Salt Lake City, Utah
+2 STAT PRE-1970
+3 DATE 2 FEB 1972
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 BAPL");
+    expect(result.output).toContain("2 DATE 14 JUN 1985");
+    expect(result.output).toContain("2 TEMP SLAKE");
+    expect(result.output).toContain("2 PLAC Salt Lake City, Utah");
+    expect(result.output).toContain("2 STAT PRE_1970");
+    expect(result.output).toContain("3 DATE 2 FEB 1972");
+  });
+
+  it("maps a GEDCOM 5.5.1 SLGS spouse sealing inside a FAM record", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @F1@ FAM
+1 SLGS
+2 DATE 3 MAR 1990
+2 TEMP SLAKE
+2 PLAC Salt Lake City, Utah
+2 STAT COMPLETED
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("0 @F1@ FAM");
+    expect(result.output).toContain("1 SLGS");
+    expect(result.output).toContain("2 STAT COMPLETED");
+  });
+
+  it("preserves an unmappable LDS STAT value as a PHRASE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BAPL
+2 STAT EXPERIMENTAL
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 STAT");
+    expect(result.output).toContain("3 PHRASE EXPERIMENTAL");
+    expect(result.output).not.toContain("2 STAT EXPERIMENTAL");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "LDS_STAT_UNMAPPED")).toBe(true);
+  });
+
+  it("normalizes a GEDCOM 5.5.1 RESN value into GEDCOM 7 enum form", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Confidential /Person/
+1 RESN privacy
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 RESN PRIVACY");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RESN_NORMALIZED")).toBe(true);
+  });
+
+  it("preserves an unmappable GEDCOM 5.5.1 RESN value as _RESN extension", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 RESN do-not-share
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 _RESN do-not-share");
+    expect(result.output).toContain("2 TAG _RESN");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RESN_PHRASE_FALLBACK")).toBe(true);
+  });
+
+  it("round-trips a GEDCOM 5.5.1 BIRT event through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 DATE 12 MAR 1880
+2 PLAC Boston, Suffolk, Massachusetts, USA
+2 AGE 0y
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("1 BIRT");
+    expect(roundTripped.output).toContain("2 DATE 12 MAR 1880");
+    expect(roundTripped.output).toContain("2 PLAC Boston, Suffolk, Massachusetts, USA");
+    expect(roundTripped.output).toContain("2 AGE 0y");
+  });
+
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
     const result = convertGedcom(readFixture("conversion-7-to-551.ged"), {
       from: "7.0.18",
