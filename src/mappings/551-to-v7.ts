@@ -38,7 +38,16 @@ const VALID_LDS_STAT_VALUES = new Set([
   "UNCLEARED"
 ]);
 
-const AGE_NUMERIC_PATTERN = /^[<>]?\s*(?:\d+y)?\s*(?:\d+m)?\s*(?:\d+w)?\s*(?:\d+d)?$/i;
+interface ParsedAgePayload {
+  bound?: "<" | ">";
+  years?: number;
+  months?: number;
+  weeks?: number;
+  days?: number;
+}
+
+const AGE_PAYLOAD_PATTERN =
+  /^\s*([<>])?\s*(?:(\d+)\s*y)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*w)?\s*(?:(\d+)\s*d)?\s*$/i;
 
 function extendMappingContext(parentTag: string): MappingContext {
   return {
@@ -126,21 +135,79 @@ function mapNameTypeNode(node: GedcomNode): GedcomNode {
   });
 }
 
-function normalizeAgeValue(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+function parseAgePayload(value: string): ParsedAgePayload | null {
+  const match = AGE_PAYLOAD_PATTERN.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const [, bound, years, months, weeks, days] = match;
+  if (!years && !months && !weeks && !days) {
+    return null;
+  }
+
+  const parsed: ParsedAgePayload = {};
+  if (bound === "<" || bound === ">") {
+    parsed.bound = bound;
+  }
+  if (years !== undefined) {
+    parsed.years = Number(years);
+  }
+  if (months !== undefined) {
+    parsed.months = Number(months);
+  }
+  if (weeks !== undefined) {
+    parsed.weeks = Number(weeks);
+  }
+  if (days !== undefined) {
+    parsed.days = Number(days);
+  }
+  return parsed;
 }
 
-function isNumericAgePayload(value: string): boolean {
-  const compact = value.replace(/\s+/g, "");
-  if (compact.length === 0) {
-    return false;
+function formatAgePayload(parsed: ParsedAgePayload): string {
+  const parts: string[] = [];
+  if (parsed.bound) {
+    parts.push(parsed.bound);
   }
-  return AGE_NUMERIC_PATTERN.test(compact);
+  if (parsed.years !== undefined) {
+    parts.push(`${parsed.years}y`);
+  }
+  if (parsed.months !== undefined) {
+    parts.push(`${parsed.months}m`);
+  }
+  if (parsed.weeks !== undefined) {
+    parts.push(`${parsed.weeks}w`);
+  }
+  if (parsed.days !== undefined) {
+    parts.push(`${parsed.days}d`);
+  }
+  return parts.join(" ");
+}
+
+function ageWithPhraseFallback(node: GedcomNode, mappedChildren: GedcomNode[], phrase: string): GedcomNode {
+  const hasPhrase = mappedChildren.some((child) => child.tag === "PHRASE");
+  const children = hasPhrase
+    ? mappedChildren
+    : [
+        ...mappedChildren,
+        makeNode({
+          level: node.level + 1,
+          tag: "PHRASE",
+          value: phrase,
+          children: []
+        })
+      ];
+
+  return makeNode({
+    level: node.level,
+    tag: "AGE",
+    children
+  });
 }
 
 function mapAgeNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const raw = node.value?.trim() ?? "";
-  const upper = raw.toUpperCase();
   const mappedChildren = node.children.map(cloneNode);
 
   if (!raw) {
@@ -151,39 +218,22 @@ function mapAgeNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
     });
   }
 
-  if (LEGACY_AGE_KEYWORDS.has(upper)) {
+  if (LEGACY_AGE_KEYWORDS.has(raw.toUpperCase())) {
     diagnostics.push({
       severity: "info",
       code: "AGE_PHRASE_FALLBACK",
       message: `Moved GEDCOM 5.5.1 AGE keyword ${raw} into GEDCOM 7 PHRASE substructure.`,
       location: withOptionalLocation(node)
     });
-
-    const hasPhrase = mappedChildren.some((child) => child.tag === "PHRASE");
-    const childrenWithPhrase = hasPhrase
-      ? mappedChildren
-      : [
-          ...mappedChildren,
-          makeNode({
-            level: node.level + 1,
-            tag: "PHRASE",
-            value: raw,
-            children: []
-          })
-        ];
-
-    return makeNode({
-      level: node.level,
-      tag: "AGE",
-      children: childrenWithPhrase
-    });
+    return ageWithPhraseFallback(node, mappedChildren, raw);
   }
 
-  if (isNumericAgePayload(raw)) {
+  const parsed = parseAgePayload(raw);
+  if (parsed) {
     return makeNode({
       level: node.level,
       tag: "AGE",
-      value: normalizeAgeValue(raw),
+      value: formatAgePayload(parsed),
       children: mappedChildren
     });
   }
@@ -194,29 +244,13 @@ function mapAgeNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
     message: `Moved non-numeric GEDCOM 5.5.1 AGE value ${raw} into GEDCOM 7 PHRASE substructure.`,
     location: withOptionalLocation(node)
   });
-
-  const hasPhrase = mappedChildren.some((child) => child.tag === "PHRASE");
-  const childrenWithPhrase = hasPhrase
-    ? mappedChildren
-    : [
-        ...mappedChildren,
-        makeNode({
-          level: node.level + 1,
-          tag: "PHRASE",
-          value: raw,
-          children: []
-        })
-      ];
-
-  return makeNode({
-    level: node.level,
-    tag: "AGE",
-    children: childrenWithPhrase
-  });
+  return ageWithPhraseFallback(node, mappedChildren, raw);
 }
 
 function normalizeLdsStatToken(value: string): string {
-  return value.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  // 5.5.1 spells the SLGS cancellation status `DNS/CAN`; v7 spells it `DNS_CAN`.
+  // Strip slash, hyphen, and whitespace so both forms collapse onto the v7 enum.
+  return value.trim().toUpperCase().replace(/[\s\-/]+/g, "_");
 }
 
 function mapLdsStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
@@ -267,6 +301,55 @@ function mapLdsStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode
     tag: "STAT",
     children: childrenWithPhrase
   });
+}
+
+function mapIdnoNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnostic[]): GedcomNode {
+  const mappedChildren = node.children.map((child) =>
+    mapNode(child, extendMappingContext(node.tag), diagnostics)
+  );
+
+  const hasType = mappedChildren.some((child) => child.tag === "TYPE");
+  if (hasType) {
+    return makeNode({
+      level: node.level,
+      tag: "IDNO",
+      ...(node.value !== undefined ? { value: node.value } : {}),
+      children: mappedChildren
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: "IDNO_TYPE_SYNTHESIZED",
+    message: `Synthesized GEDCOM 7 IDNO TYPE OTHER because the GEDCOM 5.5.1 source omitted the TYPE substructure.`,
+    location: withOptionalLocation(node)
+  });
+
+  const syntheticType = makeNode({
+    level: node.level + 1,
+    tag: "TYPE",
+    value: "OTHER",
+    children: node.value
+      ? [
+          makeNode({
+            level: node.level + 2,
+            tag: "PHRASE",
+            value: node.value,
+            children: []
+          })
+        ]
+      : []
+  });
+
+  return makeNode({
+    level: node.level,
+    tag: "IDNO",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: [...mappedChildren, syntheticType]
+  });
+  // Note: GED-6 only synthesizes TYPE for IDNO. INDI.EVEN / FAM.EVEN / FACT
+  // also require TYPE in v7; those will be handled when a fixture surfaces
+  // the case in the round-trip corpus (GED-9).
 }
 
 function mapResnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
@@ -405,9 +488,7 @@ function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
   const preservedChildren = document.header.raw.children
     .filter((child) => PRESERVED_HEADER_TAGS.has(child.tag))
     .map((child) => cloneAtLevel(child, 1));
-  // Custom tags collected from the entire document so they survive in v7 SCHMA;
-  // any new tags introduced by the mapper (e.g. _RESN fallback) must be picked up too.
-  const schemaTags = new Set<string>(collectCustomTags(document));
+  const schemaNode = buildSchemaNode(collectCustomTags(document));
 
   return {
     ...document.header,
@@ -419,10 +500,7 @@ function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
       children: [
         ...preservedChildren,
         buildGedcomNode(),
-        ...(() => {
-          const schemaNode = buildSchemaNode([...schemaTags].sort());
-          return schemaNode ? [schemaNode] : [];
-        })()
+        ...(schemaNode ? [schemaNode] : [])
       ]
     })
   };
@@ -443,6 +521,10 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "RESN") {
     return mapResnNode(node, diagnostics);
+  }
+
+  if (node.tag === "IDNO") {
+    return mapIdnoNode(node, context, diagnostics);
   }
 
   return makeNode({
@@ -467,14 +549,9 @@ export function mapGedcom551DocumentToV7(document: ParsedDocument): ParsedDocume
   const diagnostics = [...document.diagnostics];
   const mappedRecords = document.records.map((record) => mapRecord(record, diagnostics));
 
-  // Header SCHMA collection runs over the *original* document; if the mapper introduces
-  // new custom tags (currently only _RESN), augment the collected tag set so SCHMA
-  // declares them. We re-run the collector against the mapped records to be safe.
-  const mappedDocumentForSchema: ParsedDocument = {
-    ...document,
-    records: mappedRecords
-  };
-  const header = mapHeader(mappedDocumentForSchema);
+  // SCHMA must declare every custom tag in the *mapped* document, not the source,
+  // because the mapper itself may introduce new extensions (e.g. _RESN fallback).
+  const header = mapHeader({ ...document, records: mappedRecords });
 
   return {
     version: "7.0.18",
