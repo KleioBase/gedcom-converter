@@ -2,6 +2,7 @@ import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../ty
 
 interface MappingContext {
   parentTag?: string;
+  grandParentTag?: string;
 }
 
 const PRESERVED_HEADER_TAGS = new Set(["SOUR", "DEST", "DATE", "SUBM", "COPR", "FILE", "NOTE", "PLAC"]);
@@ -38,6 +39,31 @@ const VALID_LDS_STAT_VALUES = new Set([
   "UNCLEARED"
 ]);
 
+// v7 §3.4 enumset-MEDI (spec p.96–97). Uppercase enum; 5.5.1 stored the same
+// values in lowercase. Unknown values fall back to OTHER + PHRASE.
+const VALID_MEDI_VALUES = new Set([
+  "AUDIO",
+  "BOOK",
+  "CARD",
+  "ELECTRONIC",
+  "FICHE",
+  "FILM",
+  "MAGAZINE",
+  "MANUSCRIPT",
+  "MAP",
+  "NEWSPAPER",
+  "PHOTO",
+  "TOMBSTONE",
+  "VIDEO",
+  "OTHER"
+]);
+
+// URIs chosen so the existing mapExidNode in src/mappings/v7-to-551.ts
+// (which dispatches on `/RIN` and `/RFN#` substrings) round-trips them back
+// to the original 5.5.1 tag. Keep these endings stable.
+const RIN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RIN";
+const RFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RFN#";
+
 interface ParsedAgePayload {
   bound?: "<" | ">";
   years?: number;
@@ -49,9 +75,10 @@ interface ParsedAgePayload {
 const AGE_PAYLOAD_PATTERN =
   /^\s*([<>])?\s*(?:(\d+)\s*y)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*w)?\s*(?:(\d+)\s*d)?\s*$/i;
 
-function extendMappingContext(parentTag: string): MappingContext {
+function extendMappingContext(context: MappingContext, parentTag: string): MappingContext {
   return {
-    parentTag
+    parentTag,
+    ...(context.parentTag !== undefined ? { grandParentTag: context.parentTag } : {})
   };
 }
 
@@ -305,7 +332,7 @@ function mapLdsStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode
 
 function mapIdnoNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnostic[]): GedcomNode {
   const mappedChildren = node.children.map((child) =>
-    mapNode(child, extendMappingContext(node.tag), diagnostics)
+    mapNode(child, extendMappingContext(context, node.tag), diagnostics)
   );
 
   const hasType = mappedChildren.some((child) => child.tag === "TYPE");
@@ -506,6 +533,231 @@ function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
   };
 }
 
+// Inverse of ROLE_TEXT_ALIASES in src/mappings/v7-to-551.ts. Keep the two in sync.
+const ROLE_TEXT_TO_ENUM: Record<string, string> = {
+  CHILD: "CHIL",
+  CLERGY: "CLERGY",
+  FATHER: "FATH",
+  FRIEND: "FRIEND",
+  GODPARENT: "GODP",
+  HUSBAND: "HUSB",
+  MOTHER: "MOTH",
+  MULTIPLE: "MULTIPLE",
+  NEIGHBOR: "NGHBR",
+  OFFICIATOR: "OFFICIATOR",
+  PARENT: "PARENT",
+  SPOUSE: "SPOU",
+  WIFE: "WIFE",
+  WITNESS: "WITN"
+};
+
+function lookupRoleEnum(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const key = value.trim().toUpperCase().replace(/[\s_-]+/g, "");
+  return ROLE_TEXT_TO_ENUM[key];
+}
+
+function buildRoleNode(node: GedcomNode, sourceValue: string | undefined, diagnostics: Diagnostic[], diagnosticCode: string): GedcomNode {
+  const enumValue = lookupRoleEnum(sourceValue);
+  if (enumValue) {
+    return makeNode({
+      level: node.level,
+      tag: "ROLE",
+      value: enumValue,
+      children: []
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: diagnosticCode,
+    message: `Preserved GEDCOM 5.5.1 free-text role ${sourceValue ?? ""} as GEDCOM 7 ROLE OTHER + PHRASE.`,
+    location: withOptionalLocation(node)
+  });
+
+  return makeNode({
+    level: node.level,
+    tag: "ROLE",
+    value: "OTHER",
+    children: sourceValue
+      ? [
+          makeNode({
+            level: node.level + 1,
+            tag: "PHRASE",
+            value: sourceValue,
+            children: []
+          })
+        ]
+      : []
+  });
+}
+
+function mapAssoNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnostic[]): GedcomNode {
+  const mappedChildren: GedcomNode[] = [];
+  let roleInjected = false;
+
+  for (const child of node.children) {
+    if (child.tag === "RELA") {
+      mappedChildren.push(buildRoleNode(child, child.value, diagnostics, "RELA_PHRASE_FALLBACK"));
+      roleInjected = true;
+      continue;
+    }
+
+    mappedChildren.push(mapNode(child, extendMappingContext(context, node.tag), diagnostics));
+  }
+
+  // v7 ASSO requires a ROLE child. If the 5.5.1 source omitted RELA, synthesize ROLE OTHER
+  // so the output stays valid; the absence is recorded as a diagnostic.
+  if (!roleInjected) {
+    diagnostics.push({
+      severity: "info",
+      code: "ASSO_ROLE_SYNTHESIZED",
+      message: `Synthesized GEDCOM 7 ASSO ROLE OTHER because the GEDCOM 5.5.1 source omitted RELA.`,
+      location: withOptionalLocation(node)
+    });
+    mappedChildren.push(
+      makeNode({
+        level: node.level + 1,
+        tag: "ROLE",
+        value: "OTHER",
+        children: []
+      })
+    );
+  }
+
+  return makeNode({
+    level: node.level,
+    tag: "ASSO",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: mappedChildren
+  });
+}
+
+function mapSourceCitationRoleNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  return buildRoleNode(node, node.value, diagnostics, "CITATION_ROLE_PHRASE_FALLBACK");
+}
+
+function mapMediNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  const raw = node.value?.trim();
+  if (!raw) {
+    return makeNode({ level: node.level, tag: "MEDI", children: node.children.map(cloneNode) });
+  }
+
+  const upper = raw.toUpperCase();
+  if (VALID_MEDI_VALUES.has(upper)) {
+    return makeNode({
+      level: node.level,
+      tag: "MEDI",
+      value: upper,
+      children: node.children.map(cloneNode)
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: "MEDI_PHRASE_FALLBACK",
+    message: `Unable to map GEDCOM 5.5.1 MEDI value ${raw} to a GEDCOM 7 enum; emitted OTHER + PHRASE.`,
+    location: withOptionalLocation(node)
+  });
+
+  const existingChildren = node.children.map(cloneNode);
+  const hasPhrase = existingChildren.some((child) => child.tag === "PHRASE");
+  const children = hasPhrase
+    ? existingChildren
+    : [
+        ...existingChildren,
+        makeNode({
+          level: node.level + 1,
+          tag: "PHRASE",
+          value: raw,
+          children: []
+        })
+      ];
+
+  return makeNode({
+    level: node.level,
+    tag: "MEDI",
+    value: "OTHER",
+    children
+  });
+}
+
+function makeIdentifierExidNode(node: GedcomNode, typeUri: string): GedcomNode {
+  return makeNode({
+    level: node.level,
+    tag: "EXID",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: [
+      makeNode({
+        level: node.level + 1,
+        tag: "TYPE",
+        value: typeUri,
+        children: []
+      })
+    ]
+  });
+}
+
+function mapRinNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "RIN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 RIN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (RIN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, RIN_EXID_TYPE_URI);
+}
+
+function mapRfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "RFN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 RFN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (RFN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, RFN_EXID_TYPE_URI);
+}
+
+function promoteNoteRecordsToSnote(records: ParsedRecord[], diagnostics: Diagnostic[]): { records: ParsedRecord[]; promoted: Set<string> } {
+  const promoted = new Set<string>();
+  const rewritten = records.map((record) => {
+    if (record.tag === "NOTE" && record.xref !== undefined) {
+      promoted.add(record.xref);
+      diagnostics.push({
+        severity: "info",
+        code: "NOTE_RECORD_PROMOTED",
+        message: `Promoted GEDCOM 5.5.1 NOTE record ${record.xref} to GEDCOM 7 SNOTE record.`,
+        location: { tag: "NOTE" }
+      });
+      return {
+        ...record,
+        tag: "SNOTE"
+      };
+    }
+    return record;
+  });
+  return { records: rewritten, promoted };
+}
+
+function rewriteInlineNotePointers(node: GedcomNode, promoted: Set<string>): GedcomNode {
+  const rewrittenChildren = node.children.map((child) => rewriteInlineNotePointers(child, promoted));
+
+  if (node.tag === "NOTE" && node.value && promoted.has(node.value)) {
+    return {
+      ...node,
+      tag: "SNOTE",
+      children: rewrittenChildren
+    };
+  }
+
+  return {
+    ...node,
+    children: rewrittenChildren
+  };
+}
+
 function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnostic[]): GedcomNode {
   if (node.tag === "TYPE" && context.parentTag === "NAME") {
     return mapNameTypeNode(node);
@@ -527,10 +779,30 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
     return mapIdnoNode(node, context, diagnostics);
   }
 
+  if (node.tag === "ASSO") {
+    return mapAssoNode(node, context, diagnostics);
+  }
+
+  if (node.tag === "ROLE" && context.parentTag === "EVEN" && context.grandParentTag === "SOUR") {
+    return mapSourceCitationRoleNode(node, diagnostics);
+  }
+
+  if (node.tag === "MEDI") {
+    return mapMediNode(node, diagnostics);
+  }
+
+  if (node.tag === "RIN") {
+    return mapRinNode(node, diagnostics);
+  }
+
+  if (node.tag === "RFN") {
+    return mapRfnNode(node, diagnostics);
+  }
+
   return makeNode({
     level: node.level,
     tag: node.tag,
-    children: node.children.map((child) => mapNode(child, extendMappingContext(node.tag), diagnostics)),
+    children: node.children.map((child) => mapNode(child, extendMappingContext(context, node.tag), diagnostics)),
     ...(node.value !== undefined ? { value: node.value } : {}),
     ...(node.xref !== undefined ? { xref: node.xref } : {})
   });
@@ -547,7 +819,20 @@ function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecor
 
 export function mapGedcom551DocumentToV7(document: ParsedDocument): ParsedDocument {
   const diagnostics = [...document.diagnostics];
-  const mappedRecords = document.records.map((record) => mapRecord(record, diagnostics));
+
+  // Two-pass NOTE handling: promote top-level NOTE records to SNOTE, then rewrite
+  // every inline NOTE pointer that targets a promoted xref so the v7 graph is
+  // self-consistent. Inline NOTE substructures with literal payloads are untouched.
+  const { records: noteRewrittenRecords, promoted: promotedNoteXrefs } = promoteNoteRecordsToSnote(
+    document.records,
+    diagnostics
+  );
+  const pointerRewrittenRecords = noteRewrittenRecords.map((record) => ({
+    ...record,
+    children: record.children.map((child) => rewriteInlineNotePointers(child, promotedNoteXrefs))
+  }));
+
+  const mappedRecords = pointerRewrittenRecords.map((record) => mapRecord(record, diagnostics));
 
   // SCHMA must declare every custom tag in the *mapped* document, not the source,
   // because the mapper itself may introduce new extensions (e.g. _RESN fallback).
