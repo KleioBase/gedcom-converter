@@ -1336,6 +1336,299 @@ describe("convertGedcom", () => {
     expect(roundTripped.output).toContain("3 MEDI BOOK");
   });
 
+  it("converts GEDCOM 5.5.1 multimedia FORM to a GEDCOM 7 MIME type", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 OBJE
+2 FILE photo.jpg
+3 FORM jpeg
+2 TITL Family portrait
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("1 OBJE");
+    expect(result.output).toContain("2 FILE photo.jpg");
+    expect(result.output).toContain("3 FORM image/jpeg");
+    expect(result.output).toContain("2 TITL Family portrait");
+    expect(result.output).not.toContain("3 FORM jpeg");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FORM_TO_MIME_CONVERTED")).toBe(true);
+  });
+
+  it("converts additional GEDCOM 5.5.1 FORM values (mp3, tif) to MIME", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @M1@ OBJE
+1 FILE interview.mp3
+2 FORM mp3
+0 @M2@ OBJE
+1 FILE scan.tif
+2 FORM tif
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 FORM audio/mpeg");
+    expect(result.output).toContain("2 FORM image/tiff");
+  });
+
+  it("flags an unknown GEDCOM 5.5.1 multimedia FORM and preserves the original value", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @M1@ OBJE
+1 FILE archive.zip
+2 FORM zip
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 FORM zip");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FORM_TO_MIME_UNMAPPED")).toBe(true);
+  });
+
+  it("leaves a non-multimedia FORM tag untouched (HEAD.GEDC.FORM, PLAC.FORM)", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 PLAC
+2 FORM City, County, State, Country
+0 @I1@ INDI
+1 NAME Jane /Doe/
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 FORM City, County, State, Country");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FORM_TO_MIME_CONVERTED")).toBe(false);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FORM_TO_MIME_UNMAPPED")).toBe(false);
+  });
+
+  it("converts a GEDCOM 5.5.1 calendar escape in a DATE payload to GEDCOM 7 keyword form", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 DATE @#DJULIAN@ 1700
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 DATE JULIAN 1700");
+    expect(result.output).not.toContain("@#DJULIAN@");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DATE_CALENDAR_ESCAPE_CONVERTED")).toBe(true);
+  });
+
+  it("converts a GEDCOM 5.5.1 B.C. epoch marker in a DATE payload to GEDCOM 7 BCE", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 DEAT
+2 DATE 12 JAN 200 B.C.
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 DATE 12 JAN 200 BCE");
+    expect(result.output).not.toContain("B.C.");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DATE_EPOCH_CONVERTED")).toBe(true);
+  });
+
+  it("converts both calendar escape and epoch within a GEDCOM 5.5.1 DATE range", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 RESI
+2 DATE FROM @#DJULIAN@ 1500 TO @#DGREGORIAN@ 1700
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 DATE FROM JULIAN 1500 TO GREGORIAN 1700");
+  });
+
+  it("leaves a plain GEDCOM 5.5.1 Gregorian DATE unchanged without diagnostics", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 DATE 12 MAR 1880
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 DATE 12 MAR 1880");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DATE_CALENDAR_ESCAPE_CONVERTED")).toBe(false);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "DATE_EPOCH_CONVERTED")).toBe(false);
+  });
+
+  it("preserves GEDCOM 5.5.1 PLAC.MAP coordinates into GEDCOM 7", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 PLAC Boston, Suffolk, Massachusetts, USA
+3 MAP
+4 LATI N42.3522
+4 LONG W71.0275
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+
+    expect(result.output).toContain("2 PLAC Boston, Suffolk, Massachusetts, USA");
+    expect(result.output).toContain("3 MAP");
+    expect(result.output).toContain("4 LATI N42.3522");
+    expect(result.output).toContain("4 LONG W71.0275");
+  });
+
+  it("round-trips a GEDCOM 5.5.1 OBJE FILE FORM through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 OBJE
+2 FILE photo.jpg
+3 FORM jpeg
+2 TITL Family portrait
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("1 OBJE");
+    expect(roundTripped.output).toContain("2 FILE photo.jpg");
+    // Round-trip is value-preserving but structurally normalised by the
+    // existing v7→5.5.1 path: FILE_FORM_ALIASES collapses jpeg→jpg, FORM is
+    // re-emitted at level 2 (sibling of FILE) rather than level 3, and TITL
+    // is hoisted into an explanatory NOTE. The title text still survives.
+    expect(roundTripped.output).toContain("2 FORM jpg");
+    expect(roundTripped.output).toMatch(/Family portrait/);
+  });
+
+  it("round-trips a GEDCOM 5.5.1 DATE with Julian calendar escape through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 DATE @#DJULIAN@ 1700
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("2 DATE @#DJULIAN@ 1700");
+  });
+
+  it("round-trips GEDCOM 5.5.1 PLAC.MAP coordinates through GEDCOM 7 and back", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 BIRT
+2 PLAC Boston, Suffolk, Massachusetts, USA
+3 MAP
+4 LATI N42.3522
+4 LONG W71.0275
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, {
+      from: "5.5.1",
+      to: "7.0.18"
+    });
+    const roundTripped = convertGedcom(upgraded.output, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(roundTripped.output).toContain("2 PLAC Boston, Suffolk, Massachusetts, USA");
+    expect(roundTripped.output).toContain("4 LATI N42.3522");
+    expect(roundTripped.output).toContain("4 LONG W71.0275");
+  });
+
   it("converts GEDCOM 7 shared notes and associations to GEDCOM 5.5.1 forms", () => {
     const result = convertGedcom(readFixture("conversion-7-to-551.ged"), {
       from: "7.0.18",
