@@ -1,4 +1,5 @@
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
+import { mapGedcom551DateNodeToV7 } from "./date/551-to-v7.js";
 
 interface MappingContext {
   parentTag?: string;
@@ -63,6 +64,24 @@ const VALID_MEDI_VALUES = new Set([
 // to the original 5.5.1 tag. Keep these endings stable.
 const RIN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RIN";
 const RFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RFN#";
+
+// Inverse of mapMimeToForm in src/mappings/v7-to-551.ts (lines 82-107). Keep
+// the two tables symmetric: any 5.5.1 FORM value here should appear as a v7
+// MIME on the other side, and the round-trip mapMimeToForm -> mapFormToMime
+// must be identity for the keys.
+const FORM_TO_MIME: Record<string, string> = {
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  gif: "image/gif",
+  bmp: "image/bmp",
+  tiff: "image/tiff",
+  tif: "image/tiff",
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+  mp4: "video/mp4",
+  pdf: "application/pdf",
+  txt: "text/plain"
+};
 
 interface ParsedAgePayload {
   bound?: "<" | ">";
@@ -720,6 +739,55 @@ function mapRfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return makeIdentifierExidNode(node, RFN_EXID_TYPE_URI);
 }
 
+function mapFormNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  const raw = node.value?.trim();
+  const mappedChildren = node.children.map(cloneNode);
+
+  if (!raw) {
+    return makeNode({ level: node.level, tag: "FORM", children: mappedChildren });
+  }
+
+  // If the value already looks like a MIME type (e.g. caller pre-converted),
+  // pass it through untouched.
+  if (raw.includes("/")) {
+    return makeNode({
+      level: node.level,
+      tag: "FORM",
+      value: raw,
+      children: mappedChildren
+    });
+  }
+
+  const mime = FORM_TO_MIME[raw.toLowerCase()];
+  if (mime) {
+    diagnostics.push({
+      severity: "info",
+      code: "FORM_TO_MIME_CONVERTED",
+      message: `Converted GEDCOM 5.5.1 multimedia FORM ${raw} to GEDCOM 7 MIME ${mime}.`,
+      location: withOptionalLocation(node)
+    });
+    return makeNode({
+      level: node.level,
+      tag: "FORM",
+      value: mime,
+      children: mappedChildren
+    });
+  }
+
+  diagnostics.push({
+    severity: "warning",
+    code: "FORM_TO_MIME_UNMAPPED",
+    message: `Unable to map GEDCOM 5.5.1 multimedia FORM ${raw} to a GEDCOM 7 MIME type; preserved original value.`,
+    location: withOptionalLocation(node)
+  });
+  return makeNode({
+    level: node.level,
+    tag: "FORM",
+    value: raw,
+    children: mappedChildren
+  });
+}
+
 function promoteNoteRecordsToSnote(records: ParsedRecord[], diagnostics: Diagnostic[]): { records: ParsedRecord[]; promoted: Set<string> } {
   const promoted = new Set<string>();
   const rewritten = records.map((record) => {
@@ -797,6 +865,17 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "RFN") {
     return mapRfnNode(node, diagnostics);
+  }
+
+  // FORM is overloaded across the 5.5.1 spec — only translate to MIME when it
+  // describes a multimedia FILE format. HEAD.GEDC.FORM and PLAC.FORM use the
+  // same tag for different semantics and must pass through verbatim.
+  if (node.tag === "FORM" && context.parentTag === "FILE") {
+    return mapFormNode(node, diagnostics);
+  }
+
+  if (node.tag === "DATE") {
+    return mapGedcom551DateNodeToV7(node, diagnostics);
   }
 
   return makeNode({
