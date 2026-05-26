@@ -134,6 +134,8 @@ Diagnostics are part of normal conversion output. They are useful for:
 
 If you want warnings to fail conversion, use `strict: true`.
 
+For a per-tag breakdown of what every conversion direction does — `clean`, `lossy: …`, `_TAG`, `dropped`, or `N/A` — and the diagnostic code each lossy path emits, see [`docs/fidelity-matrix.md`](./docs/fidelity-matrix.md).
+
 ## Local repository helper
 
 This repository includes a helper script for converting a real file into a gitignored temp folder:
