@@ -1,6 +1,6 @@
 {
   "name": "@kleiobase/gedcom-converter",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.0",
   "description": "Convert GEDCOM files between versions, starting with FamilySearch GEDCOM 7.0.18 to GEDCOM 5.5.1.",
   "type": "module",
   "license": "MIT",
@@ -25,6 +25,7 @@
     "README.md",
     "LICENSE"
   ],
+  "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,6 +34,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "engines": {
     "node": ">=20"

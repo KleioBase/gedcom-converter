@@ -39,9 +39,13 @@ Typical use cases:
 
 ## Install
 
+The package is currently published under the `alpha` dist-tag while the 1.0 API is finalized:
+
 ```bash
-npm install @kleiobase/gedcom-converter
+npm install @kleiobase/gedcom-converter@alpha
 ```
+
+Pre-1.0 minor versions may introduce breaking changes; pin an exact version in production until 1.0 lands.
 
 ## Quick start
 
