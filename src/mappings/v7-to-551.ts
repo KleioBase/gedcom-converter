@@ -1,3 +1,4 @@
+import { PEDI as PEDI_ENUM } from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 import { mapGedcom7DateNodeTo551 } from "./date/v7-to-551.js";
 
@@ -459,6 +460,23 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
 
   if (node.tag === "EXID") {
     return mapExidNode(node, diagnostics, context);
+  }
+
+  // Restore 5.5.1's lowercase pedigree spelling for the standard enum values
+  // (BIRTH → birth). PEDI OTHER is left to the compatibility layer, which hoists
+  // its descriptive PHRASE to a family-link note (see GED-19).
+  if (node.tag === "PEDI" && node.value) {
+    const upper = node.value.toUpperCase();
+    if (upper !== "OTHER" && PEDI_ENUM.has(upper)) {
+      return makeNode({
+        level: node.level,
+        tag: "PEDI",
+        value: node.value.toLowerCase(),
+        children: node.children
+          .map((child) => mapNode(child, diagnostics, extendMappingContext(context, node.tag)))
+          .filter((child): child is GedcomNode => child !== null)
+      });
+    }
   }
 
   if (node.tag === "DATE") {

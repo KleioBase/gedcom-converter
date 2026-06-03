@@ -1,3 +1,15 @@
+import {
+  MEDI as MEDI_ENUM,
+  NAME_TYPE as NAME_TYPE_ENUM,
+  NAME_TYPE_ALIASES,
+  ORD_STAT as ORD_STAT_ENUM,
+  PEDI as PEDI_ENUM,
+  RESN as RESN_ENUM,
+  ROLE as ROLE_ENUM,
+  ROLE_TEXT_ALIASES,
+  enumOrPhrase,
+  normalizeRoleToken
+} from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 import { mapGedcom551DateNodeToV7 } from "./date/551-to-v7.js";
 
@@ -7,57 +19,12 @@ interface MappingContext {
 }
 
 const PRESERVED_HEADER_TAGS = new Set(["SOUR", "DEST", "DATE", "SUBM", "COPR", "FILE", "NOTE", "PLAC"]);
-const GEDCOM7_NAME_TYPES = new Set(["AKA", "BIRTH", "IMMIGRANT", "MAIDEN", "MARRIED", "PROFESSIONAL", "OTHER"]);
-
-const GEDCOM551_NAME_TYPE_ALIASES: Record<string, string> = {
-  AKA: "AKA",
-  ALSO_KNOWN_AS: "AKA",
-  ALIAS: "AKA",
-  BIRTH: "BIRTH",
-  IMMIGRANT: "IMMIGRANT",
-  IMMIGRATION: "IMMIGRANT",
-  MAIDEN: "MAIDEN",
-  MARRIED: "MARRIED",
-  PROFESSIONAL: "PROFESSIONAL",
-  PROFESSION: "PROFESSIONAL",
-  OTHER: "OTHER"
-};
 
 const LEGACY_AGE_KEYWORDS = new Set(["CHILD", "INFANT", "STILLBORN"]);
-const VALID_RESN_VALUES = new Set(["CONFIDENTIAL", "LOCKED", "PRIVACY"]);
-const VALID_LDS_STAT_VALUES = new Set([
-  "BIC",
-  "CANCELED",
-  "CHILD",
-  "COMPLETED",
-  "DNS",
-  "DNS_CAN",
-  "EXCLUDED",
-  "INFANT",
-  "PRE_1970",
-  "STILLBORN",
-  "SUBMITTED",
-  "UNCLEARED"
-]);
 
-// v7 §3.4 enumset-MEDI (spec p.96–97). Uppercase enum; 5.5.1 stored the same
-// values in lowercase. Unknown values fall back to OTHER + PHRASE.
-const VALID_MEDI_VALUES = new Set([
-  "AUDIO",
-  "BOOK",
-  "CARD",
-  "ELECTRONIC",
-  "FICHE",
-  "FILM",
-  "MAGAZINE",
-  "MANUSCRIPT",
-  "MAP",
-  "NEWSPAPER",
-  "PHOTO",
-  "TOMBSTONE",
-  "VIDEO",
-  "OTHER"
-]);
+// The valid value sets for every enumeration live in `src/enums/index.ts` (the
+// single source of truth shared with the inverse mapper). This file imports the
+// ones it needs (MEDI, NAME-TYPE, ord-STAT, PEDI, RESN, ROLE) at the top.
 
 // URIs chosen so the existing mapExidNode in src/mappings/v7-to-551.ts
 // (which dispatches on `/RIN` and `/RFN#` substrings) round-trips them back
@@ -139,27 +106,14 @@ function withOptionalLocation(node: GedcomNode): { line?: number; tag: string } 
   };
 }
 
-function normalizeNameTypeToken(value: string): string {
-  return value.trim().toUpperCase().replace(/[\s-]+/g, "_");
-}
-
-function mapGedcom551NameTypeToV7(value: string | undefined): GedcomNode["value"] {
-  if (!value) {
-    return value;
-  }
-
-  const normalized = normalizeNameTypeToken(value);
-  return GEDCOM551_NAME_TYPE_ALIASES[normalized] ?? (GEDCOM7_NAME_TYPES.has(normalized) ? normalized : undefined);
-}
-
 function mapNameTypeNode(node: GedcomNode): GedcomNode {
-  const mappedValue = mapGedcom551NameTypeToV7(node.value);
+  const resolution = enumOrPhrase(node.value, NAME_TYPE_ENUM, { aliases: NAME_TYPE_ALIASES });
 
-  if (mappedValue) {
+  if (resolution.matched) {
     return makeNode({
       level: node.level,
       tag: "TYPE",
-      value: mappedValue,
+      value: resolution.enum,
       children: []
     });
   }
@@ -311,13 +265,15 @@ function mapLdsStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode
     });
   }
 
-  const normalized = normalizeLdsStatToken(raw);
+  // ord-STAT has no OTHER member, so an unmatchable value drops to a bare STAT +
+  // PHRASE rather than STAT OTHER. Use the slash-stripping LDS normaliser.
+  const resolution = enumOrPhrase(raw, ORD_STAT_ENUM, { normalize: normalizeLdsStatToken });
 
-  if (VALID_LDS_STAT_VALUES.has(normalized)) {
+  if (resolution.matched) {
     return makeNode({
       level: node.level,
       tag: "STAT",
-      value: normalized,
+      value: resolution.enum,
       children: mappedChildren
     });
   }
@@ -419,7 +375,7 @@ function mapResnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const droppedTokens: string[] = [];
 
   for (const token of tokens) {
-    if (VALID_RESN_VALUES.has(token)) {
+    if (RESN_ENUM.has(token)) {
       if (!validTokens.includes(token)) {
         validTokens.push(token);
       }
@@ -552,39 +508,18 @@ function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
   };
 }
 
-// Inverse of ROLE_TEXT_ALIASES in src/mappings/v7-to-551.ts. Keep the two in sync.
-const ROLE_TEXT_TO_ENUM: Record<string, string> = {
-  CHILD: "CHIL",
-  CLERGY: "CLERGY",
-  FATHER: "FATH",
-  FRIEND: "FRIEND",
-  GODPARENT: "GODP",
-  HUSBAND: "HUSB",
-  MOTHER: "MOTH",
-  MULTIPLE: "MULTIPLE",
-  NEIGHBOR: "NGHBR",
-  OFFICIATOR: "OFFICIATOR",
-  PARENT: "PARENT",
-  SPOUSE: "SPOU",
-  WIFE: "WIFE",
-  WITNESS: "WITN"
-};
-
-function lookupRoleEnum(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const key = value.trim().toUpperCase().replace(/[\s_-]+/g, "");
-  return ROLE_TEXT_TO_ENUM[key];
-}
-
 function buildRoleNode(node: GedcomNode, sourceValue: string | undefined, diagnostics: Diagnostic[], diagnosticCode: string): GedcomNode {
-  const enumValue = lookupRoleEnum(sourceValue);
-  if (enumValue) {
+  // 5.5.1 RELA / source-citation ROLE is free text; resolve it onto the v7 ROLE
+  // enum via the text aliases (`Father` → FATH), accepting already-enum tokens too.
+  const resolution = sourceValue
+    ? enumOrPhrase(sourceValue, ROLE_ENUM, { aliases: ROLE_TEXT_ALIASES, normalize: normalizeRoleToken })
+    : undefined;
+
+  if (resolution?.matched) {
     return makeNode({
       level: node.level,
       tag: "ROLE",
-      value: enumValue,
+      value: resolution.enum,
       children: []
     });
   }
@@ -664,12 +599,12 @@ function mapMediNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
     return makeNode({ level: node.level, tag: "MEDI", children: node.children.map(cloneNode) });
   }
 
-  const upper = raw.toUpperCase();
-  if (VALID_MEDI_VALUES.has(upper)) {
+  const resolution = enumOrPhrase(raw, MEDI_ENUM);
+  if (resolution.matched) {
     return makeNode({
       level: node.level,
       tag: "MEDI",
-      value: upper,
+      value: resolution.enum,
       children: node.children.map(cloneNode)
     });
   }
@@ -698,6 +633,54 @@ function mapMediNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return makeNode({
     level: node.level,
     tag: "MEDI",
+    value: "OTHER",
+    children
+  });
+}
+
+function mapPediNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  const raw = node.value?.trim();
+  const mappedChildren = node.children.map(cloneNode);
+
+  if (!raw) {
+    return makeNode({ level: node.level, tag: "PEDI", children: mappedChildren });
+  }
+
+  // 5.5.1 stored pedigree types lowercase (`birth`); v7 wants the upper-cased
+  // enum (`BIRTH`). Anything outside the set becomes OTHER + PHRASE.
+  const resolution = enumOrPhrase(raw, PEDI_ENUM);
+  if (resolution.matched) {
+    return makeNode({
+      level: node.level,
+      tag: "PEDI",
+      value: resolution.enum,
+      children: mappedChildren
+    });
+  }
+
+  diagnostics.push({
+    severity: "info",
+    code: "PEDI_PHRASE_FALLBACK",
+    message: `Unable to map GEDCOM 5.5.1 PEDI value ${raw} to a GEDCOM 7 enum; emitted OTHER + PHRASE.`,
+    location: withOptionalLocation(node)
+  });
+
+  const hasPhrase = mappedChildren.some((child) => child.tag === "PHRASE");
+  const children = hasPhrase
+    ? mappedChildren
+    : [
+        ...mappedChildren,
+        makeNode({
+          level: node.level + 1,
+          tag: "PHRASE",
+          value: raw,
+          children: []
+        })
+      ];
+
+  return makeNode({
+    level: node.level,
+    tag: "PEDI",
     value: "OTHER",
     children
   });
@@ -857,6 +840,10 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "MEDI") {
     return mapMediNode(node, diagnostics);
+  }
+
+  if (node.tag === "PEDI") {
+    return mapPediNode(node, diagnostics);
   }
 
   if (node.tag === "RIN") {
