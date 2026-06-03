@@ -103,6 +103,69 @@ describe("parseGedcom", () => {
 
     expect(document.records[0]?.children[0]?.value).toBe("me@example.com\n@me is a handle");
   });
+
+  it("rejects GEDCOM 7 lines that violate the v7 container grammar", () => {
+    const invalidInputs = [
+      `0 HEAD
+01 GEDC
+2 VERS 7.0.18
+0 TRLR`,
+      `0 HEAD
+1  GEDC
+2 VERS 7.0.18
+0 TRLR`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+1 1BAD value
+0 TRLR`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+1 NOTE @#DHEBREW@
+0 TRLR`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+1 _ value
+0 TRLR`
+    ];
+
+    for (const input of invalidInputs) {
+      expect(() => parseGedcom(input, { version: "7.0.18" })).toThrow();
+    }
+  });
+
+  it("requires GEDCOM 7 documents to begin with HEAD and end with a single TRLR", () => {
+    const invalidInputs = [
+      `0 @I1@ INDI
+1 NAME Ada /Lovelace/
+0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 TRLR`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 TRLR
+0 @I1@ INDI`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 TRLR`,
+      `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 TRLR done`
+    ];
+
+    for (const input of invalidInputs) {
+      expect(() => parseGedcom(input, { version: "7.0.18" })).toThrow();
+    }
+  });
 });
 
 describe("stringifyGedcom", () => {
@@ -285,6 +348,7 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 _KLEIO custom");
     expect(result.output).not.toContain("1 CHAR UTF-8");
     expect(result.output).not.toContain("2 FORM LINEAGE-LINKED");
+    expect(() => parseGedcom(result.output, { version: "7.0.18" })).not.toThrow();
   });
 
   it("maps GEDCOM 5.5.1 personal name structures to GEDCOM 7", () => {
@@ -2865,6 +2929,20 @@ describe("convertGedcom", () => {
     expect(result.version).toBe("5.5.1");
     expect(result.output).toContain("2 VERS 5.5.1");
     expect(result.output).toContain("2 FORM LINEAGE-LINKED");
+  });
+
+  it("can upgrade a legacy GEDCOM 5.5 file directly into GEDCOM 7", () => {
+    const result = convertGedcom(readFixture("official/gedcom551/TGC551LF.ged"), {
+      from: "5.5",
+      to: "7.0.18"
+    });
+
+    expect(result.version).toBe("7.0.18");
+    expect(result.output).toContain("2 VERS 7.0.18");
+    expect(result.output).not.toContain("\n1 CHAR ANSEL");
+    expect(result.output).not.toContain("0 @SUBMISSION@ SUBN");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "SUBN_DROPPED")).toBe(true);
+    expect(() => parseGedcom(result.output, { version: "7.0.18" })).not.toThrow();
   });
 
   it("sanitizes maximal70 output away from the loudest 7-only constructs", () => {

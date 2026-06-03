@@ -38,6 +38,15 @@ export function convertGedcom(input: string | Uint8Array, options: ConvertOption
         gedcomVersion: "5.5.1"
       }
     };
+  } else if (intermediate.version === "5.5" && options.to === "7.0.18") {
+    outputDocument = mapGedcom551DocumentToV7({
+      ...intermediate,
+      version: "5.5.1",
+      header: {
+        ...intermediate.header,
+        gedcomVersion: "5.5.1"
+      }
+    });
   } else if (intermediate.version === "7.0.18" && options.to === "5.5.1") {
     outputDocument = mapGedcom7DocumentTo551(intermediate);
   } else if (intermediate.version === "5.5.1" && options.to === "7.0.18") {

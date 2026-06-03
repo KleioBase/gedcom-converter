@@ -28,7 +28,9 @@ Typical use cases:
 - stringify: `7.0.18`, `5.5.1`
 - convert:
   - `7.0.18 -> 5.5.1`
+  - `5.5.1 -> 7.0.18`
   - `5.5 -> 5.5.1`
+  - `5.5 -> 7.0.18`
 
 ## Why use it
 
@@ -165,7 +167,7 @@ Validation does not mean all conversions are lossless. Some GEDCOM 7 constructs 
 - textual `.ged` files only
 - no CLI package yet
 - no GEDZIP support
-- reverse conversion not implemented yet
+- no full semantic GEDCOM schema validator yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
 
 ## References

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertGedcom } from "../src/index.js";
+import { convertGedcom, parseGedcom } from "../src/index.js";
 import { readFixture } from "./helpers.js";
 import { expectStructuralEquivalence, normalizeForDiff } from "./helpers/round-trip.js";
 import type { SupportedVersion } from "../src/types.js";
@@ -30,9 +30,6 @@ const FIXTURES_551: FixtureSpec[] = [
     allowedDiagnostics: [],
     expectTextEquivalence: true
   }
-  // fixtures/official/gedcom551/TGC551LF.ged is GEDCOM 5.5 (not 5.5.1) and
-  // ISO-8859 encoded. Direct 5.5 → 7.0.18 round-trip lands in GED-10; this
-  // suite enables it via the it.todo() at the bottom of the describe block.
 ];
 
 // All diagnostic codes below were captured by running the round-trip suite
@@ -254,7 +251,26 @@ describe("round-trip corpus", () => {
     }
   });
 
-  it.todo(
-    "round-trips GEDCOM 5.5 fixtures (TGC551LF.ged) once 5.5 → 7.0.18 path lands in GED-10"
-  );
+  it("upgrades the official GEDCOM 5.5 torture fixture directly to parseable GEDCOM 7", () => {
+    const upgraded = convertGedcom(readFixture("official/gedcom551/TGC551LF.ged"), {
+      from: "5.5",
+      to: "7.0.18"
+    });
+
+    expect(upgraded.output).not.toContain("0 @SUBMISSION@ SUBN");
+    expect(upgraded.diagnostics.map((diagnostic) => diagnostic.code)).toContain("SUBN_DROPPED");
+    expect(() => parseGedcom(upgraded.output, { version: "7.0.18" })).not.toThrow();
+  });
+
+  it("upgrades ANSEL-declared GEDCOM 5.5 bytes directly to UTF-8-only GEDCOM 7 text", () => {
+    const input = new TextEncoder().encode(readFixture("official/gedcom551/TGC551LF.ged"));
+    const upgraded = convertGedcom(input, {
+      from: "5.5",
+      to: "7.0.18"
+    });
+
+    expect(upgraded.output).toContain("2 VERS 7.0.18");
+    expect(upgraded.output).not.toContain("\n1 CHAR ANSEL");
+    expect(() => parseGedcom(upgraded.output, { version: "7.0.18" })).not.toThrow();
+  });
 });

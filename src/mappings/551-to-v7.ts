@@ -887,7 +887,17 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
   });
 }
 
-function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecord {
+function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecord | null {
+  if (record.tag === "SUBN") {
+    diagnostics.push({
+      severity: "info",
+      code: "SUBN_DROPPED",
+      message: `Dropped GEDCOM 5.5 SUBN record ${record.xref ?? "<no xref>"} because GEDCOM 7 has no submission record equivalent.`,
+      location: { tag: "SUBN", ...(record.xref !== undefined ? { recordId: record.xref } : {}) }
+    });
+    return null;
+  }
+
   return {
     tag: record.tag,
     children: record.children.map((child) => mapNode(child, {}, diagnostics)),
@@ -911,7 +921,9 @@ export function mapGedcom551DocumentToV7(document: ParsedDocument): ParsedDocume
     children: record.children.map((child) => rewriteInlineNotePointers(child, promotedNoteXrefs))
   }));
 
-  const mappedRecords = pointerRewrittenRecords.map((record) => mapRecord(record, diagnostics));
+  const mappedRecords = pointerRewrittenRecords
+    .map((record) => mapRecord(record, diagnostics))
+    .filter((record): record is ParsedRecord => record !== null);
 
   // SCHMA must declare every custom tag in the *mapped* document, not the source,
   // because the mapper itself may introduce new extensions (e.g. _RESN fallback).
