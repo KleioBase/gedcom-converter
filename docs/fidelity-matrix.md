@@ -109,10 +109,10 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 
 | Tag | v7 → 5.5.1 | 5.5.1 → v7 | 5.5 → v7 | Notes |
 | --- | --- | --- | --- | --- |
-| `PLAC` | lossy: redundant translations dropped; LANG demoted to `_LANG` | clean | clean | `REDUNDANT_PLACE_TRANSLATION_DROPPED`. |
-| `MAP`, `LATI`, `LONG` | lossy: `_MAP` demotion; in `SOUR.DATA.EVEN.PLAC` hoisted to a SOURCE DATA NOTE | clean | clean | `SOURCE_PLACE_MAP_NOTED`. |
+| `PLAC` | lossy: redundant translations dropped; LANG demoted to `_LANG` | clean | clean | `REDUNDANT_PLACE_TRANSLATION_DROPPED`. `_LANG` is a deliberate `_TAG` keep (GED-19): place-name language is machine-readable metadata with no native 5.5.1 slot, and inlining it as prose would not round-trip. Full LANG handling is [GED-16](https://linear.app/kleiobase/issue/GED-16). |
+| `MAP`, `LATI`, `LONG` | clean — `PLAC.MAP.LATI/LONG` is native 5.5.1; in `SOUR.DATA.EVEN.PLAC` hoisted to a SOURCE DATA NOTE | clean | clean | `SOURCE_PLACE_MAP_NOTED` (source-record place only). Regular event place coordinates round-trip cleanly (GED-19; previously demoted to `_MAP`). |
 | `PLAC.FORM` (place hierarchy) | clean — preserved | clean | clean | |
-| `PLAC.NOTE` | lossy: demoted to `_NOTE` | clean | clean | |
+| `PLAC.NOTE` | clean — native 5.5.1 `PLAC.NOTE` | clean | clean | GED-19: previously demoted to `_NOTE`. In `SOUR.DATA.EVEN.PLAC` the note is still hoisted to a DATA NOTE (`SOURCE_PLACE_NOTE_NOTED`). |
 | `ADDR`, `ADR1`, `ADR2`, `ADR3`, `CITY`, `STAE`, `POST`, `CTRY` | clean | clean | clean | |
 | `PHON`, `EMAIL`, `FAX`, `WWW` | clean | clean | clean | |
 
@@ -199,7 +199,7 @@ All pointer tags (`ALIA`, `ANCI`, `ASSO`, `CHIL`, `DESI`, `FAMC`, `FAMS`, `HUSB`
 | `SSN` | lossy: <9 digits hoisted to note | clean | clean | `SSN_NOTED`. |
 | `NCHI` (with `_TYPE`/`_HUSB`/`_WIFE` metadata) | lossy: metadata hoisted to parent record notes | clean | clean | `NCHI_METADATA_NOTED`. |
 | `NO` (negation event) | lossy: rewritten to note | N/A | N/A | `NO_NOTED`. |
-| `PEDI` | lossy: `OTHER` → `_PEDI` | clean | clean | |
+| `PEDI` | lossy: `OTHER` hoisted to a family-link NOTE (`Pedigree: <phrase>`) | clean | clean | `PEDI_PHRASE_NOTED`. GED-19: previously demoted to `_PEDI` + `_PHRASE`; now the descriptive PHRASE is surfaced as a legacy-visible `FAMC.NOTE`. Standard enum values (`adopted`/`birth`/`foster`/`sealing`) pass through clean. |
 | `SKYPEID`, `JABBERID`, `_SKYPEID`, `_JABBERID` | lossy: hoisted to note as `Skype ID: …` / `Jabber ID: …` | N/A | N/A | `CONTACT_ID_NOTED`. |
 
 ---
@@ -256,6 +256,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `OBJECT_LINK_NOTE_HOISTED` | compat | OBJE link NOTE hoisted to the parent record. |
 | `OBJECT_RESN_NOTED` | compat | OBJE-level RESN hoisted to a note. |
 | `OBJECT_TITLE_NOTED` | compat | OBJE-level TITL hoisted to a note. |
+| `PEDI_PHRASE_NOTED` | compat | Non-standard `PEDI OTHER` hoisted to a family-link NOTE (`Pedigree: <phrase>`). |
 | `POINTER_PHRASE_NOTED` | compat | HUSB/WIFE/CHIL PHRASE hoisted to a note. |
 | `REDUNDANT_AGE_PHRASE_DROPPED` | compat | Redundant `ADULT` PHRASE dropped from AGE. |
 | `REDUNDANT_ALIAS_PHRASE_DROPPED` | compat | Redundant `ALIAS` PHRASE dropped from ALIA. |
@@ -296,5 +297,5 @@ Every code emitted by the converter, with the direction in which it can appear. 
 - [GED-12](https://linear.app/kleiobase/issue/GED-12), [GED-13](https://linear.app/kleiobase/issue/GED-13), [GED-14](https://linear.app/kleiobase/issue/GED-14) — calendar coverage.
 - [GED-15](https://linear.app/kleiobase/issue/GED-15) — bidirectional round-trip of every enum set.
 - [GED-16](https://linear.app/kleiobase/issue/GED-16) — character encoding + LANG round-trip.
-- [GED-19](https://linear.app/kleiobase/issue/GED-19) — reduce remaining `_TAG` fallbacks once this matrix highlights the worst offenders.
+- [GED-19](https://linear.app/kleiobase/issue/GED-19) — reduce remaining `_TAG` fallbacks. First pass done: `PLAC.MAP` and `PLAC.NOTE` now stay clean (both are native 5.5.1), and `PEDI OTHER` is surfaced as a `FAMC.NOTE`. Remaining deliberate `_TAG` keeps (`_LANG`, `_CROP`, `_TRAN`, `_EXID`, `_UID`, `_FILE`) have no cleaner 5.5.1 representation and are justified inline above.
 - [GED-20](https://linear.app/kleiobase/issue/GED-20) — SCHMA extension declaration round-trip.

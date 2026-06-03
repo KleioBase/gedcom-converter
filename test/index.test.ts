@@ -2517,6 +2517,71 @@ describe("convertGedcom", () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "SOURCE_PLACE_CITATION_NOTED")).toBe(true);
   });
 
+  it("keeps event PLAC.MAP coordinates as a native GEDCOM 5.5.1 MAP instead of _MAP", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BIRT
+2 PLAC Boston, Suffolk, Massachusetts, USA
+3 MAP
+4 LATI N42.3522
+4 LONG W71.0275
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("3 MAP");
+    expect(result.output).toContain("4 LATI N42.3522");
+    expect(result.output).toContain("4 LONG W71.0275");
+    expect(result.output).not.toContain("_MAP");
+  });
+
+  it("keeps event PLAC.NOTE as a native GEDCOM 5.5.1 NOTE instead of _NOTE", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BIRT
+2 PLAC Boston, Suffolk, Massachusetts, USA
+3 NOTE Place of christening record
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("3 NOTE Place of christening record");
+    expect(result.output).not.toContain("_NOTE");
+  });
+
+  it("hoists a non-standard FAMC PEDI OTHER phrase into a legal family-link NOTE", () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 FAMC @F1@
+2 PEDI OTHER
+3 PHRASE Guardianship
+0 @F1@ FAM
+1 CHIL @I1@
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 NOTE Pedigree: Guardianship");
+    expect(result.output).not.toContain("_PEDI");
+    expect(result.output).not.toContain("_PHRASE");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "PEDI_PHRASE_NOTED")).toBe(true);
+  });
+
   it("keeps PAGE standard inside legal event source citations", () => {
     const input = `0 HEAD
 1 GEDC

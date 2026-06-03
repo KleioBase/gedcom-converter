@@ -60,7 +60,7 @@ const POINTER_TAGS = new Set([
   "WIFE"
 ]);
 
-const ALWAYS_DEMOTE_TAGS = new Set(["CROP", "MAP", "TRAN"]);
+const ALWAYS_DEMOTE_TAGS = new Set(["CROP", "TRAN"]);
 const ALWAYS_PHRASE_TAGS = new Set(["PHRASE"]);
 const NOTE_LIKE_PARENT_TAGS = new Set(["NOTE", "TEXT"]);
 const VALID_RESN_VALUES = new Set(["CONFIDENTIAL", "LOCKED", "PRIVACY"]);
@@ -1586,6 +1586,12 @@ function sanitizeNode(
     return demoteTag(nextNode);
   }
 
+  // GEDCOM 5.5.1 natively supports PLAC.MAP.LATI/LONG, so a place's map coordinates
+  // stay clean. MAP outside a place hierarchy has no 5.5.1 home and is demoted.
+  if (nextNode.tag === "MAP" && context.parentTag !== "PLAC") {
+    return demoteTag(nextNode);
+  }
+
   if (nextNode.tag === "UID") {
     if (canUseRefn(context.rootTag, context.parentTag, nextNode.value)) {
       return convertIdentifierNodeToRefn(nextNode, "UUID");
@@ -1669,7 +1675,17 @@ function sanitizeNode(
   }
 
   if (nextNode.tag === "PEDI" && nextNode.value?.toUpperCase() === "OTHER") {
-    return demoteTag(nextNode);
+    // GEDCOM 5.5.1 PEDI has no OTHER enum, and the descriptive PHRASE is the only
+    // meaningful payload. Hoist it to a family-link NOTE so legacy tools can read it,
+    // rather than hiding it in a `_PEDI`/`_PHRASE` extension they ignore.
+    const phraseChild = findPhraseChild(nextNode);
+    pushInfo(
+      diagnostics,
+      "PEDI_PHRASE_NOTED",
+      `Preserved non-standard PEDI ${nextNode.value} as a family-link NOTE for GEDCOM 5.5.1.`,
+      nextNode
+    );
+    return makeNoteNode(nextNode.level, prependLabeledValue("Pedigree", phraseChild?.value ?? "Other"));
   }
 
   if (nextNode.tag === "STAT" && nextNode.value && INVALID_STAT_VALUES.has(nextNode.value.toUpperCase())) {
@@ -2032,10 +2048,6 @@ function sanitizeNode(
   }
 
   if (nextNode.tag === "RELA" && (context.parentTag === "EVEN" || ["NOTE", "OBJE", "SOUR", "SUBM"].includes(context.rootTag))) {
-    return demoteTag(nextNode);
-  }
-
-  if (nextNode.tag === "NOTE" && context.parentTag === "PLAC") {
     return demoteTag(nextNode);
   }
 
