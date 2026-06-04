@@ -14,6 +14,7 @@ export type {
   Diagnostic,
   DiagnosticLocation,
   DiagnosticSeverity,
+  GedcomLineEnding,
   GedcomNode,
   ParseOptions,
   ParseableVersion,
@@ -65,11 +66,11 @@ export function parseGedcom(input: string | Uint8Array, options: ParseOptions = 
 
 export function stringifyGedcom(document: ParsedDocument, options: StringifyOptions): string {
   if (options.version === "7.0.18") {
-    return stringifyGedcom7(document);
+    return stringifyGedcom7(document, options.lineEnding);
   }
 
   if (options.version === "5.5.1") {
-    return stringifyGedcom551(document);
+    return stringifyGedcom551(document, options.lineEnding);
   }
 
   throw new ConversionError(`Unsupported stringify target: ${String(options.version)}`);

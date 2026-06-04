@@ -65,8 +65,13 @@ export interface ParseOptions {
   version?: ParseableVersion;
 }
 
+/** Line-ending style the serializer emits. GEDCOM permits CR, LF, or CRLF. */
+export type GedcomLineEnding = "LF" | "CRLF" | "CR";
+
 export interface StringifyOptions {
   version: SupportedVersion;
+  /** Line ending for the emitted text. Defaults to `"LF"`. */
+  lineEnding?: GedcomLineEnding;
 }
 
 export interface ConvertOptions {

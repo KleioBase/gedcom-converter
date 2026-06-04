@@ -163,6 +163,28 @@ Generated 5.5.1 output from the official `maximal70.ged` sample has been validat
 
 Validation does not mean all conversions are lossless. Some GEDCOM 7 constructs still need to be preserved as `_TAG` data when GEDCOM 5.5.1 has no clean equivalent.
 
+## Character encodings and line endings
+
+Input byte streams (`Uint8Array`) are decoded automatically based on the byte-order
+mark and the `1 CHAR` declaration:
+
+| Declared / detected | Decoded as |
+| --- | --- |
+| UTF-8 BOM, or `1 CHAR UTF-8` / `ASCII` | UTF-8 (ASCII is a subset) |
+| UTF-16 BOM (`FF FE` / `FE FF`), or `1 CHAR UNICODE` | UTF-16 LE / BE |
+| `1 CHAR ANSEL` (the pre-7.0 default) | ANSEL, including combining diacritics (reordered + NFC-composed) |
+
+GEDCOM 7 output is always UTF-8 (spec mandate); 5.5.1 output is UTF-8 with a
+`1 CHAR UTF-8` header. Passing a `string` skips decoding (only the BOM is stripped).
+
+CR, LF, and CRLF line endings are all parsed, and the parser produces identical
+records regardless of the input style. The serializer emits LF by default; pass
+`lineEnding` to choose:
+
+```ts
+stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
+```
+
 ## Limits
 
 - textual `.ged` files only

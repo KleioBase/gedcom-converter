@@ -1,4 +1,4 @@
-import type { GedcomNode, ParsedDocument } from "../types.js";
+import type { GedcomLineEnding, GedcomNode, ParsedDocument } from "../types.js";
 import { stringifyGedcomTree } from "../utils/lines.js";
 import { GEDCOM551_CHARSET, GEDCOM551_FORM, GEDCOM551_VERSION } from "./schema.js";
 
@@ -414,7 +414,7 @@ function buildSubmitterRecord(document: ParsedDocument): GedcomNode {
   };
 }
 
-export function stringifyGedcom551(document: ParsedDocument): string {
+export function stringifyGedcom551(document: ParsedDocument, lineEnding: GedcomLineEnding = "LF"): string {
   const submitterXref = getSubmitterXref(document);
   const hasSubmitterRecord = document.records.some((record) => record.tag === "SUBM" && record.xref === submitterXref);
   const nodes: GedcomNode[] = [
@@ -429,5 +429,5 @@ export function stringifyGedcom551(document: ParsedDocument): string {
     }
   ];
 
-  return stringifyGedcomTree(nodes, { mode: "gedcom551" });
+  return stringifyGedcomTree(nodes, { mode: "gedcom551", lineEnding });
 }

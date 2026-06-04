@@ -1,5 +1,11 @@
-import type { Diagnostic, GedcomNode } from "../types.js";
+import type { Diagnostic, GedcomLineEnding, GedcomNode } from "../types.js";
 import { ParseError } from "../errors/index.js";
+
+const EOL_SEQUENCES: Record<GedcomLineEnding, string> = {
+  LF: "\n",
+  CRLF: "\r\n",
+  CR: "\r"
+};
 
 interface ParsedLine {
   level: number;
@@ -16,6 +22,7 @@ type ContinuationMode = "gedcom7" | "gedcom551";
 
 interface StringifyOptions {
   mode: ContinuationMode;
+  lineEnding?: GedcomLineEnding;
 }
 
 export function splitGedcomLines(input: string): string[] {
@@ -235,5 +242,6 @@ export function stringifyGedcomTree(nodes: GedcomNode[], options: StringifyOptio
     }
   }
 
-  return `${lines.join("\n")}\n`;
+  const eol = EOL_SEQUENCES[options.lineEnding ?? "LF"];
+  return `${lines.join(eol)}${eol}`;
 }
