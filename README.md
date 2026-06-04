@@ -78,6 +78,12 @@ console.log(result.output);
 console.log(result.diagnostics);
 ```
 
+## Examples
+
+Runnable recipes live in [`examples/`](./examples/README.md) — parsing, building a
+document, converting with diagnostics, severity reports, and GEDZIP bundling. Run
+any with `npx tsx examples/<name>.ts`.
+
 ## API
 
 ### `detectGedcomVersion(input)`
