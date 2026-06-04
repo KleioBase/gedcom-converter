@@ -49,10 +49,24 @@ function extractVersionFromHead(input: string): DetectedVersion {
   return "unknown";
 }
 
+/**
+ * Detect the GEDCOM version of a document from its `HEAD.GEDC.VERS` line.
+ *
+ * @param input - GEDCOM text, or bytes (decoded by BOM + `1 CHAR`).
+ * @returns `"7.0.18"`, `"5.5.1"`, `"5.5"`, or `"unknown"`.
+ * @public
+ */
 export function detectGedcomVersion(input: string | Uint8Array): DetectedVersion {
   return extractVersionFromHead(decodeInput(input));
 }
 
+/**
+ * Parse GEDCOM text or bytes into a {@link ParsedDocument}. The version is
+ * auto-detected unless `options.version` is given.
+ *
+ * @throws if the version cannot be detected and none is supplied.
+ * @public
+ */
 export function parseGedcom(input: string | Uint8Array, options: ParseOptions = {}): ParsedDocument {
   const version = options.version ?? detectGedcomVersion(input);
 
@@ -67,6 +81,11 @@ export function parseGedcom(input: string | Uint8Array, options: ParseOptions = 
   throw new ConversionError("Unable to detect GEDCOM version. Pass parseGedcom(..., { version }) explicitly.");
 }
 
+/**
+ * Serialize a {@link ParsedDocument} to GEDCOM text for the requested version.
+ *
+ * @public
+ */
 export function stringifyGedcom(document: ParsedDocument, options: StringifyOptions): string {
   if (options.version === "7.0.18") {
     return stringifyGedcom7(document, options.lineEnding);

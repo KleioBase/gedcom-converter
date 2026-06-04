@@ -237,6 +237,7 @@ stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 ## Releases
 
 - Version history: [`CHANGELOG.md`](./CHANGELOG.md)
+- Public API surface and stability: [`docs/api-stability.md`](./docs/api-stability.md)
 - Versioning and publishing policy: [`docs/release-process.md`](./docs/release-process.md)
 
 ## References

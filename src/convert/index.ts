@@ -21,6 +21,19 @@ function countPreservedExtensions(document: ParsedDocument): number {
   return document.extensions.length + recordExtensions.length;
 }
 
+/**
+ * Convert a GEDCOM document from one version to another.
+ *
+ * Produces valid target-version output plus diagnostics describing any lossy or
+ * preserved structures. With `options.strict`, the conversion throws if any
+ * warning is emitted.
+ *
+ * @param input - Source GEDCOM text or bytes.
+ * @param options - `from` / `to` versions and conversion flags.
+ * @returns The converted `output`, `diagnostics`, and `stats`.
+ * @throws {@link ConversionError} on an unsupported version pair or (in strict mode) on warnings.
+ * @public
+ */
 export function convertGedcom(input: string | Uint8Array, options: ConvertOptions): ConversionResult {
   const sourceDocument = options.from === "7.0.18" ? parseGedcom7(input) : parseGedcom551(input);
   const intermediate = toIntermediateDocument(sourceDocument);

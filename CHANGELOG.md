@@ -42,6 +42,18 @@ See [`docs/release-process.md`](./docs/release-process.md) for the release polic
 
 - `v7 → 5.5.1` reduces remaining `_TAG` fallbacks where a clean 5.5.1 form exists
   (e.g. `PLAC.MAP`, `PLAC.NOTE`) ([GED-19]).
+- v7 `SCHMA` is now preserved as a `_SCHMA` HEAD block on the 5.5.1 side instead of
+  `Schema tag:` prose notes ([GED-20]).
+- The public API surface is documented and frozen for v1.0 in
+  [`docs/api-stability.md`](docs/api-stability.md) ([GED-24]).
+
+### Migration
+
+No breaking API changes in 0.2.0 — every change is additive (new exports) or a
+fix that moves output toward the documented behaviour. Consumers that scraped the
+old `Schema tag:` HEAD note should read the `_SCHMA` block instead. The
+`ConvertOptions.preserveUnknown` / `preserveHeaderMeta` fields remain reserved
+(`@experimental`, no effect).
 
 ## [0.1.0-alpha] - 2026-05
 
