@@ -229,7 +229,6 @@ function buildHeadSourceNode(document: ParsedDocument): { node: GedcomNode; head
 
 function buildHeaderDescriptionNode(document: ParsedDocument, extraLines: string[]): GedcomNode | null {
   const rawHeaderNote = document.header.raw.children.find((child) => child.tag === "NOTE");
-  const schemaNode = document.header.raw.children.find((child) => child.tag === "SCHMA");
   let value = rawHeaderNote?.value;
 
   const noteLanguage = rawHeaderNote?.children.find((child) => child.tag === "LANG" && child.value)?.value;
@@ -256,10 +255,6 @@ function buildHeaderDescriptionNode(document: ParsedDocument, extraLines: string
     value = value ? `${value}\n${line}` : line;
   }
 
-  for (const tagNode of schemaNode?.children.filter((child) => child.tag === "TAG" && child.value) ?? []) {
-    value = value ? `${value}\nSchema tag: ${tagNode.value}` : `Schema tag: ${tagNode.value}`;
-  }
-
   if (!value) {
     return null;
   }
@@ -269,6 +264,29 @@ function buildHeaderDescriptionNode(document: ParsedDocument, extraLines: string
     tag: "NOTE",
     value,
     children: []
+  };
+}
+
+// GED-20 — GEDCOM 5.5.1 has no SCHMA, so a v7 SCHMA is preserved as a `_SCHMA`
+// HEAD block whose `_TAG` children keep the original `<tag> <URI>` payloads. This
+// lets a v7 → 5.5.1 → v7 round-trip recover the documented extension URIs.
+function buildSchemaPreservationNode(document: ParsedDocument): GedcomNode | null {
+  const schemaNode = document.header.raw.children.find((child) => child.tag === "SCHMA");
+  const tagNodes = schemaNode?.children.filter((child) => child.tag === "TAG" && child.value) ?? [];
+
+  if (tagNodes.length === 0) {
+    return null;
+  }
+
+  return {
+    level: 1,
+    tag: "_SCHMA",
+    children: tagNodes.map((tagNode) => ({
+      level: 2,
+      tag: "_TAG",
+      value: tagNode.value!,
+      children: []
+    }))
   };
 }
 
@@ -289,6 +307,7 @@ function buildHead(document: ParsedDocument): GedcomNode {
     headerNoteLines.push(normalizedHeaderTime.noted);
   }
   const headerDescriptionNode = buildHeaderDescriptionNode(document, headerNoteLines);
+  const schemaPreservationNode = buildSchemaPreservationNode(document);
 
   return {
     level: 0,
@@ -393,7 +412,8 @@ function buildHead(document: ParsedDocument): GedcomNode {
           ]
         : []),
       ...(headPlaceNode ? [headPlaceNode] : []),
-      ...(headerDescriptionNode ? [headerDescriptionNode] : [])
+      ...(headerDescriptionNode ? [headerDescriptionNode] : []),
+      ...(schemaPreservationNode ? [schemaPreservationNode] : [])
     ]
   };
 }

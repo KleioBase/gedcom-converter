@@ -183,7 +183,7 @@ All pointer tags (`ALIA`, `ANCI`, `ASSO`, `CHIL`, `DESI`, `FAMC`, `FAMS`, `HUSB`
 | --- | --- | --- | --- | --- |
 | `HEAD` | lossy: rewritten to 5.5.1 shape (GEDC.VERS=`5.5.1`, CHAR=`UTF-8`) | lossy: filtered to `SOUR/DEST/DATE/SUBM/COPR/FILE/NOTE/PLAC`; SCHMA generated; GEDC.VERS=`7.0.18`; CHAR=`UTF-8` | (same) | |
 | `GEDC.VERS` | clean — overwritten | clean — overwritten | clean | |
-| `SCHMA` | N/A — not emitted | clean — generated from collected `_TAG` extensions | (same) | |
+| `SCHMA` | preserved as a `_SCHMA` HEAD block (`_TAG <tag> <URI>`) so the URIs survive a round-trip | clean — generated from collected custom tags; each `TAG` gets a documented URI (restored from a `_SCHMA` block) or a synthetic one (`SCHMA_TAG_SYNTHESIZED`) | (same) | GED-20. `v7 SCHMA → 5.5.1 _SCHMA → v7 SCHMA` keeps real URIs intact; the `_SCHMA`/`_TAG` mechanism tags are never re-declared as data. |
 | `CHAR` | clean — forced to `UTF-8` | clean — forced to `UTF-8` | clean | Input bytes are decoded by encoding before parsing: a BOM, then the declared `1 CHAR` value, drive selection of ANSEL (the pre-7.0 default), UTF-16 (`UNICODE`), or UTF-8. ANSEL combining diacritics (which precede their base letter) are reordered and NFC-composed. |
 | `SUBM` (header) | clean | clean | clean | |
 | `DEST`, `COPR`, `FILE`, `DATE`, `NOTE`, `PLAC`, `SOUR` (under HEAD) | clean — preserved | clean — preserved | clean | |
@@ -280,6 +280,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `RIN_TO_EXID` | up | 5.5.1 RIN → v7 EXID with legacy TYPE URI. |
 | `ROLE_TO_RELA_FALLBACK` | down | v7 ROLE under ASSO mapped to a 5.5.1 RELA text. |
 | `ROMN_TO_TRAN` | up | 5.5.1 `NAME`/`PLAC` `ROMN` romanized variation → v7 `TRAN` + `LANG und`. |
+| `SCHMA_TAG_SYNTHESIZED` | up | A custom tag was declared in SCHMA with a synthetic URI (no documented URI was available). |
 | `SDATE_NOTED` | compat | SDATE rewritten to a note. |
 | `SDATE_PHRASE_DROPPED` | compat | SDATE PHRASE dropped. |
 | `SLGC_NOTED` | compat | SLGC without FAMC rewritten to a note. |
@@ -314,4 +315,4 @@ Every code emitted by the converter, with the direction in which it can appear. 
 - [GED-15](https://linear.app/kleiobase/issue/GED-15) — bidirectional round-trip of every enum set. **Done:** the 12 enumeration sets are codified in `src/enums/index.ts` with the shared `enumOrPhrase` helper; both mappers consume them, PEDI now case-folds with `OTHER` + `PHRASE` fallback, and `test/enums.test.ts` exercises every set.
 - [GED-16](https://linear.app/kleiobase/issue/GED-16) — character encoding. **Done:** input byte streams are decoded from ANSEL (pre-7.0 default, including combining diacritics), UTF-16 LE/BE (`UNICODE`), ASCII, or UTF-8 based on BOM + `1 CHAR` (`src/utils/ansel.ts`, `src/utils/text.ts`); the serializer takes a `lineEnding` option (LF/CRLF/CR); CR and LF inputs parse to identical IR (`test/encoding.test.ts`). Full BCP-47 ↔ language-name round-trip is tracked separately (only a handful of languages are aliased today).
 - [GED-19](https://linear.app/kleiobase/issue/GED-19) — reduce remaining `_TAG` fallbacks. First pass done: `PLAC.MAP` and `PLAC.NOTE` now stay clean (both are native 5.5.1), and `PEDI OTHER` is surfaced as a `FAMC.NOTE`. Remaining deliberate `_TAG` keeps (`_LANG`, `_CROP`, `_TRAN`, `_EXID`, `_UID`, `_FILE`) have no cleaner 5.5.1 representation and are justified inline above.
-- [GED-20](https://linear.app/kleiobase/issue/GED-20) — SCHMA extension declaration round-trip.
+- [GED-20](https://linear.app/kleiobase/issue/GED-20) — SCHMA extension declaration round-trip. **Done:** `2 TAG` now carries a URI (was a bare tag — invalid v7); v7 SCHMA is preserved as a `_SCHMA` HEAD block across a 5.5.1 hop, so URIs survive `v7 → 5.5.1 → v7`. `src/mappings/schema.ts`, `test/schema-extensions.test.ts`.
