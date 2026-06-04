@@ -97,6 +97,13 @@ Parses GEDCOM text into a `ParsedDocument`.
 
 Serializes a parsed document into GEDCOM text for the requested version.
 
+### `parseGedcomZip(input)`
+
+Parses a FamilySearch GEDZIP (`.gdz`) archive. Returns a `Promise<ParsedGedzip>`
+with the parsed `document`, a `files` map of bundled media (keyed by archive path),
+and `diagnostics`. Encrypted archives reject with a clear error; `META-INF` entries
+are ignored with a diagnostic. Use `looksLikeZip(input)` to detect GEDZIP bytes.
+
 ### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
 
 Converts a GEDCOM file and returns:
@@ -189,7 +196,7 @@ stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 
 - textual `.ged` files only
 - no CLI package yet
-- no GEDZIP support
+- GEDZIP `.gdz` reading is supported (`parseGedcomZip`); writing is not yet
 - no full semantic GEDCOM schema validator yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
 

@@ -74,6 +74,15 @@ export interface StringifyOptions {
   lineEnding?: GedcomLineEnding;
 }
 
+export interface ParsedGedzip {
+  /** The parsed `gedcom.ged` dataset from the archive. */
+  document: ParsedDocument;
+  /** Local files bundled in the archive, keyed by their archive path (FilePath payload). */
+  files: Map<string, Uint8Array>;
+  /** Diagnostics from unzipping and from parsing the dataset. */
+  diagnostics: Diagnostic[];
+}
+
 export interface ConvertOptions {
   from: ParseableVersion;
   to: SupportedVersion;
