@@ -119,6 +119,28 @@ Converts a GEDCOM file and returns:
 - `diagnostics`
 - `stats`
 
+## CLI
+
+The package ships a `gedcom-convert` binary:
+
+```bash
+gedcom-convert detect <file>
+gedcom-convert parse <file> [--version <v>]
+gedcom-convert stringify <input.json> --version <v> [-o <out>]
+gedcom-convert convert <input> --to <v> [--from <v>] [-o <out>] [--strict] [--preserve-unknown]
+gedcom-convert validate <file> [--against <v>]
+gedcom-convert roundtrip <file> [--version <v>]
+```
+
+A `<file>` of `-` reads from standard input; without `-o`, output goes to standard
+output, so commands pipe cleanly. Exit codes: `0` success, `1` error, `2`
+strict-mode warning, `64` usage error. Diagnostics print to stderr (coloured on a
+TTY; honours `NO_COLOR`). Run with `--help` for usage.
+
+```bash
+npx @kleiobase/gedcom-converter convert input.ged --to 5.5.1 -o output.ged
+```
+
 ## Conversion model
 
 The converter is intentionally conservative.
@@ -202,7 +224,6 @@ stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 ## Limits
 
 - textual `.ged` files only
-- no CLI package yet
 - GEDZIP `.gdz` reading and writing are supported (`parseGedcomZip` / `stringifyGedcomZip`)
 - no full semantic GEDCOM schema validator yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
