@@ -31,6 +31,8 @@ const LEGACY_AGE_KEYWORDS = new Set(["CHILD", "INFANT", "STILLBORN"]);
 // to the original 5.5.1 tag. Keep these endings stable.
 const RIN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RIN";
 const RFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RFN#";
+// mapExidNode in v7-to-551.ts recovers AFN from any EXID whose TYPE ends in `/AFN`.
+const AFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/AFN";
 
 // Inverse of mapMimeToForm in src/mappings/v7-to-551.ts (lines 82-107). Keep
 // the two tables symmetric: any 5.5.1 FORM value here should appear as a v7
@@ -722,6 +724,60 @@ function mapRfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return makeIdentifierExidNode(node, RFN_EXID_TYPE_URI);
 }
 
+// GEDCOM 5.5.1 carried phonetic (FONE) and romanized (ROMN) variations of names
+// and places, each with a TYPE naming the method (e.g. `kana`, `pinyin`). GEDCOM 7
+// removed both and represents every alternate rendering with TRAN (§ NAME-TRAN /
+// PLAC-TRAN), which requires a LANG substructure and has no slot for the method.
+// We emit `LANG und` (BCP-47 "undetermined") and preserve any name-piece children;
+// the method TYPE has no v7 home and is dropped with a diagnostic.
+const UNDETERMINED_LANG = "und";
+
+function mapPhoneticOrRomanizedVariation(
+  node: GedcomNode,
+  context: MappingContext,
+  diagnostics: Diagnostic[]
+): GedcomNode {
+  const kind = node.tag === "FONE" ? "phonetic" : "romanized";
+  const methodChild = node.children.find((child) => child.tag === "TYPE" && child.value);
+
+  diagnostics.push({
+    severity: "info",
+    code: node.tag === "FONE" ? "FONE_TO_TRAN" : "ROMN_TO_TRAN",
+    message: methodChild?.value
+      ? `Converted GEDCOM 5.5.1 ${kind} variation (${node.tag} TYPE ${methodChild.value}) to a GEDCOM 7 TRAN; the method is not representable in GEDCOM 7 and was dropped.`
+      : `Converted GEDCOM 5.5.1 ${kind} variation (${node.tag}) to a GEDCOM 7 TRAN.`,
+    location: withOptionalLocation(node)
+  });
+
+  const preservedChildren = node.children
+    .filter((child) => child.tag !== "TYPE")
+    .map((child) => mapNode(child, extendMappingContext(context, node.tag), diagnostics));
+
+  const hasLang = preservedChildren.some((child) => child.tag === "LANG");
+
+  return makeNode({
+    level: node.level,
+    tag: "TRAN",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: hasLang
+      ? preservedChildren
+      : [
+          makeNode({ level: node.level + 1, tag: "LANG", value: UNDETERMINED_LANG, children: [] }),
+          ...preservedChildren
+        ]
+  });
+}
+
+function mapAfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "AFN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 AFN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (AFN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, AFN_EXID_TYPE_URI);
+}
+
 function mapFormNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const raw = node.value?.trim();
   const mappedChildren = node.children.map(cloneNode);
@@ -852,6 +908,33 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "RFN") {
     return mapRfnNode(node, diagnostics);
+  }
+
+  if (node.tag === "AFN") {
+    return mapAfnNode(node, diagnostics);
+  }
+
+  // GEDCOM 5.5.1 has no standard UID, so applications stored UUIDs in the `_UID`
+  // extension. GEDCOM 7 added a standard UID (§5 g7:UID); promote it so the value
+  // becomes first-class data rather than an undeclared SCHMA extension.
+  if (node.tag === "_UID") {
+    diagnostics.push({
+      severity: "info",
+      code: "UID_PROMOTED",
+      message: `Promoted GEDCOM 5.5.1 _UID ${node.value ?? ""} to the standard GEDCOM 7 UID tag.`,
+      location: withOptionalLocation(node)
+    });
+    return makeNode({
+      level: node.level,
+      tag: "UID",
+      ...(node.value !== undefined ? { value: node.value } : {}),
+      children: node.children.map(cloneNode)
+    });
+  }
+
+  // FONE/ROMN exist under both NAME and PLAC in 5.5.1 but were removed in v7.
+  if ((node.tag === "FONE" || node.tag === "ROMN") && (context.parentTag === "NAME" || context.parentTag === "PLAC")) {
+    return mapPhoneticOrRomanizedVariation(node, context, diagnostics);
   }
 
   // FORM is overloaded across the 5.5.1 spec — only translate to MIME when it

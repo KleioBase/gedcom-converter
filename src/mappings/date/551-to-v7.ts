@@ -60,6 +60,58 @@ function normalizeSpacing(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+interface ExtractedDatePhrase {
+  /** The date portion that should remain in the DATE payload (may be empty). */
+  date: string;
+  /** The phrase extracted into a PHRASE substructure, if any. */
+  phrase?: string;
+  /** True when the source used the 5.5.1 `INT <date> (phrase)` interpreted form. */
+  interpreted: boolean;
+}
+
+/**
+ * GEDCOM 5.5.1 allowed free-text date phrases directly in the DATE payload:
+ *
+ *   - `INT <date> (<phrase>)` — an interpreted date, and
+ *   - `(<phrase>)` — a bare date phrase with no machine-readable date.
+ *
+ * GEDCOM 7 removed both forms (§2.4 Note): phrases move to a PHRASE substructure
+ * and the `INT` keyword no longer exists. This splits a 5.5.1 payload into the
+ * date text that stays in the payload and the phrase that becomes `2 PHRASE …`.
+ */
+function extractDatePhrase(value: string): ExtractedDatePhrase {
+  const trimmed = value.trim();
+
+  // `INT <date> (<phrase>)` — interpreted date. The phrase is optional in
+  // practice; if absent we simply drop the `INT` keyword and keep the date.
+  const intMatch = /^INT\b\s*(.*)$/i.exec(trimmed);
+  if (intMatch) {
+    const remainder = intMatch[1] ?? "";
+    const phraseMatch = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(remainder);
+    if (phraseMatch) {
+      return {
+        date: (phraseMatch[1] ?? "").trim(),
+        ...(phraseMatch[2] ? { phrase: phraseMatch[2].trim() } : {}),
+        interpreted: true
+      };
+    }
+    return { date: remainder.trim(), interpreted: true };
+  }
+
+  // `(<phrase>)` — a pure date phrase. The whole payload is the phrase and no
+  // machine-readable date remains.
+  const phraseOnly = /^\(([^)]*)\)$/.exec(trimmed);
+  if (phraseOnly) {
+    return {
+      date: "",
+      ...(phraseOnly[1] ? { phrase: phraseOnly[1].trim() } : {}),
+      interpreted: false
+    };
+  }
+
+  return { date: trimmed, interpreted: false };
+}
+
 export function convertGedcom551DateValueToV7(
   value: string | undefined,
   diagnostics: Diagnostic[],
@@ -80,7 +132,17 @@ export function convertGedcom551DateValueToV7(
 }
 
 export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
-  const { value, calendarConverted, epochConverted } = convertGedcom551DateValueToV7(node.value, diagnostics, node);
+  // GEDCOM 5.5.1 permitted inline date phrases (`INT 1900 (about)` / `(about)`);
+  // GEDCOM 7 moved them to a PHRASE substructure (§2.4). Split those out before
+  // running the calendar/epoch normalisation, which only applies to the date.
+  const phraseInfo = node.value !== undefined ? extractDatePhrase(node.value) : undefined;
+  const dateToConvert = phraseInfo ? phraseInfo.date : node.value;
+
+  const { value, calendarConverted, epochConverted } = convertGedcom551DateValueToV7(
+    dateToConvert === "" ? undefined : dateToConvert,
+    diagnostics,
+    node
+  );
 
   if (calendarConverted) {
     diagnostics.push({
@@ -99,10 +161,36 @@ export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnost
     });
   }
 
+  const children = [...node.children];
+
+  if (phraseInfo?.phrase && !children.some((child) => child.tag === "PHRASE")) {
+    diagnostics.push({
+      severity: "info",
+      code: phraseInfo.interpreted ? "DATE_INT_CONVERTED" : "DATE_PHRASE_EXTRACTED",
+      message: phraseInfo.interpreted
+        ? `Converted GEDCOM 5.5.1 interpreted date to a GEDCOM 7 DATE payload with a PHRASE substructure.`
+        : `Moved GEDCOM 5.5.1 inline date phrase into a GEDCOM 7 PHRASE substructure.`,
+      location: withOptionalLocation(node)
+    });
+    children.push({
+      level: node.level + 1,
+      tag: "PHRASE",
+      value: phraseInfo.phrase,
+      children: []
+    });
+  } else if (phraseInfo?.interpreted) {
+    diagnostics.push({
+      severity: "info",
+      code: "DATE_INT_CONVERTED",
+      message: `Dropped GEDCOM 5.5.1 interpreted-date \`INT\` keyword while converting to a GEDCOM 7 DATE payload.`,
+      location: withOptionalLocation(node)
+    });
+  }
+
   return {
     level: node.level,
     tag: "DATE",
-    children: node.children,
+    children,
     ...(value !== undefined ? { value } : {})
   };
 }

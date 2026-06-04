@@ -9,6 +9,7 @@ It is built for applications that need to work with real genealogy data across G
 ## What it does
 
 - detects GEDCOM versions from text or bytes
+- decodes input byte streams from ANSEL (the pre-7.0 default), UTF-16, or UTF-8 based on the BOM and `1 CHAR`
 - parses GEDCOM into a structured document model
 - stringifies parsed documents back into GEDCOM text
 - converts supported versions into other supported versions
