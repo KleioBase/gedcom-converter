@@ -103,7 +103,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 | Gregorian | `GREGORIAN` | `@#DGREGORIAN@` | clean |
 | Julian | `JULIAN` | `@#DJULIAN@` | clean (epoch markers fine through GED-14) |
 | Hebrew | `HEBREW` | `@#DHEBREW@` | clean — month tokens pass through; `ADR` (Adar I) in a common (non-leap) year is corrected to `ADS` (Adar II) per §6.1 in both directions (`HEBREW_ADAR_CORRECTED`, GED-12). |
-| French Republican | `FRENCH_R` | `@#DFRENCH R@` | clean for the calendar keyword; month-tag round-trip covered by [GED-13](https://linear.app/kleiobase/issue/GED-13) |
+| French Republican | `FRENCH_R` | `@#DFRENCH R@` | clean — all 13 month tags round-trip; invalid months (`FRENCH_R_MONTH_INVALID`) and the illegal epoch marker (`FRENCH_R_EPOCH_INVALID`) are flagged in both directions (GED-13). |
 | Legacy `ROMAN` / `UNKNOWN` | (no keyword) | `@#DROMAN@`, `@#DUNKNOWN@` | preserved verbatim with `DATE_CALENDAR_ESCAPE_UNRECOGNIZED` (covered by [GED-14](https://linear.app/kleiobase/issue/GED-14)) |
 
 ## Places
@@ -245,6 +245,8 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `FILE_TITLE_NOTED` | compat | `OBJE.FILE.TITL` hoisted to an OBJE NOTE. |
 | `FILE_TRANSLATION_NOTED` | compat | `OBJE.FILE.TRAN` hoisted to an OBJE NOTE. |
 | `FORM_TO_MIME_CONVERTED` | up | 5.5.1 FORM token mapped to a v7 MIME type. |
+| `FRENCH_R_EPOCH_INVALID` | up + down | An era marker (BCE / B.C.) was used with the epoch-less French Republican calendar. |
+| `FRENCH_R_MONTH_INVALID` | up + down | A month tag outside the 13 French Republican months was used with `FRENCH_R`. |
 | `HEBREW_ADAR_CORRECTED` | up + down | Hebrew `ADR` (Adar I) in a common year replaced with `ADS` (Adar II) per §6.1. |
 | `FORM_TO_MIME_UNMAPPED` | up | Unknown 5.5.1 FORM token preserved as-is. |
 | `IDNO_TYPE_SYNTHESIZED` | up | Missing `IDNO.TYPE` synthesised as `OTHER` + `PHRASE`. |
@@ -306,7 +308,8 @@ Every code emitted by the converter, with the direction in which it can appear. 
 
 - [GED-11](https://linear.app/kleiobase/issue/GED-11) — full date round-trip. **Done:** interpreted `INT … (…)` and bare `(…)` phrases round-trip exactly (`DATE_INT_CONVERTED`, `DATE_PHRASE_EXTRACTED`); ranges (`BET…AND`/`AFT`/`BEF`), approximations (`ABT`/`CAL`/`EST`), periods (`FROM…TO` incl. open-ended), partial dates, dual dates (`1648/49`), mixed-calendar ranges (§6.3) and `BCE`/`B.C.` markers all round-trip valid→valid. The only lossy construct is the v7 PHRASE, which reconstructs via the 5.5.1 `INT`/`(…)` forms. Covered by `test/dates.test.ts`.
 - [GED-12](https://linear.app/kleiobase/issue/GED-12) — Hebrew ADR/ADS leap-year resolution. **Done:** `isHebrewLeapYear` + `resolveHebrewAdar` (`src/mappings/date/hebrew.ts`) correct `ADR`→`ADS` in common years in both directions; covered by `test/hebrew-calendar.test.ts`.
-- [GED-13](https://linear.app/kleiobase/issue/GED-13), [GED-14](https://linear.app/kleiobase/issue/GED-14) — calendar coverage.
+- [GED-13](https://linear.app/kleiobase/issue/GED-13) — French Republican calendar. **Done:** all 13 month tags round-trip; invalid months and the illegal epoch marker are flagged (`src/mappings/date/calendar-validation.ts`, `test/french-republican.test.ts`).
+- [GED-14](https://linear.app/kleiobase/issue/GED-14) — Julian epoch markers + legacy `ROMAN`/`UNKNOWN` calendar fallback.
 - [GED-15](https://linear.app/kleiobase/issue/GED-15) — bidirectional round-trip of every enum set. **Done:** the 12 enumeration sets are codified in `src/enums/index.ts` with the shared `enumOrPhrase` helper; both mappers consume them, PEDI now case-folds with `OTHER` + `PHRASE` fallback, and `test/enums.test.ts` exercises every set.
 - [GED-16](https://linear.app/kleiobase/issue/GED-16) — character encoding + LANG round-trip. **Encoding done:** input byte streams are now decoded from ANSEL (pre-7.0 default, including combining diacritics), UTF-16 (`UNICODE`), or UTF-8 based on BOM + `1 CHAR` (`src/utils/ansel.ts`, `src/utils/text.ts`). Remaining: full BCP-47 ↔ language-name round-trip (only a handful of languages are aliased today).
 - [GED-19](https://linear.app/kleiobase/issue/GED-19) — reduce remaining `_TAG` fallbacks. First pass done: `PLAC.MAP` and `PLAC.NOTE` now stay clean (both are native 5.5.1), and `PEDI OTHER` is surfaced as a `FAMC.NOTE`. Remaining deliberate `_TAG` keeps (`_LANG`, `_CROP`, `_TRAN`, `_EXID`, `_UID`, `_FILE`) have no cleaner 5.5.1 representation and are justified inline above.
