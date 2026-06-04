@@ -1,5 +1,9 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
-import { validateFrenchRepublicanDate } from "./calendar-validation.js";
+import {
+  degradeLegacyCalendarToPhrase,
+  findLegacyUndefinedCalendar,
+  validateFrenchRepublicanDate
+} from "./calendar-validation.js";
 import { applyHebrewAdarResolution } from "./hebrew.js";
 
 // Inverse of DATE_CALENDAR_ESCAPES in ./v7-to-551.ts. 5.5.1 wraps the calendar
@@ -10,9 +14,9 @@ const DATE_CALENDAR_ESCAPE_TO_KEYWORD: Record<string, string> = {
   "@#DGREGORIAN@": "GREGORIAN",
   "@#DJULIAN@": "JULIAN",
   "@#DHEBREW@": "HEBREW",
-  "@#DFRENCH R@": "FRENCH_R",
-  "@#DROMAN@": "ROMAN",
-  "@#DUNKNOWN@": "UNKNOWN"
+  "@#DFRENCH R@": "FRENCH_R"
+  // ROMAN / UNKNOWN are intentionally absent: they are not v7 calendars and are
+  // degraded to a PHRASE before this table is consulted (GED-14).
 };
 
 const CALENDAR_ESCAPE_PATTERN = /@#D([A-Z]+(?:\s[A-Z]+)?)@/g;
@@ -135,6 +139,22 @@ export function convertGedcom551DateValueToV7(
 
 export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   validateFrenchRepublicanDate(node, node.value, diagnostics);
+
+  // ROMAN / UNKNOWN are undefined legacy calendars with no v7 equivalent: move the
+  // whole date into a PHRASE so the output stays valid GEDCOM 7 (§2.4).
+  const legacyCalendar = node.value !== undefined ? findLegacyUndefinedCalendar(node.value) : null;
+  if (legacyCalendar && node.value !== undefined) {
+    const phrase = degradeLegacyCalendarToPhrase(node, node.value, legacyCalendar, diagnostics);
+    const passthroughChildren = node.children.filter((child) => child.tag !== "PHRASE");
+    return {
+      level: node.level,
+      tag: "DATE",
+      children: [
+        ...passthroughChildren,
+        { level: node.level + 1, tag: "PHRASE", value: phrase, children: [] }
+      ]
+    };
+  }
 
   // GEDCOM 5.5.1 permitted inline date phrases (`INT 1900 (about)` / `(about)`);
   // GEDCOM 7 moved them to a PHRASE substructure (§2.4). Split those out before

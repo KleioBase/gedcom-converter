@@ -27,6 +27,93 @@ export const FRENCH_REPUBLICAN_MONTH_TAGS: readonly string[] = [...FRENCH_REPUBL
 const DATE_KEYWORDS = new Set(["FROM", "TO", "BET", "AND", "BEF", "AFT", "ABT", "CAL", "EST", "INT"]);
 const CALENDAR_KEYWORDS = new Set(["GREGORIAN", "JULIAN", "HEBREW", "FRENCH_R", "ROMAN", "UNKNOWN"]);
 
+// GED-14 — `ROMAN` and `UNKNOWN` were listed as calendar escapes in GEDCOM 5.5.1
+// but never defined, and GEDCOM 7 does not define them either. They are neither
+// representable as a v7 calendar nor as a valid 5.5.1 calendar keyword (5.5.1
+// needs the `@#D…@` escape). We treat them as undefined: degraded to a PHRASE on
+// the way up, re-escaped on the way down, with an `UNKNOWN_CALENDAR` diagnostic.
+
+/** Human label for an undefined legacy calendar (`ROMAN` → "Roman"). */
+function legacyCalendarLabel(name: string): string {
+  return name === "ROMAN" ? "Roman" : "unknown";
+}
+
+/**
+ * Detect a legacy undefined calendar in a GEDCOM 5.5.1 date. 5.5.1 only declares
+ * a calendar through the `@#D…@` escape, so we match that form exclusively — a
+ * bare word like "unknown" inside a date phrase is not a calendar.
+ */
+export function findLegacyUndefinedCalendar(value: string | undefined): "ROMAN" | "UNKNOWN" | null {
+  if (!value) {
+    return null;
+  }
+  if (/@#DROMAN@/i.test(value)) {
+    return "ROMAN";
+  }
+  if (/@#DUNKNOWN@/i.test(value)) {
+    return "UNKNOWN";
+  }
+  return null;
+}
+
+/**
+ * 5.5.1 → v7: an undefined legacy calendar can't be a v7 calendar, so move the
+ * whole date into a human-readable PHRASE (§2.4 empty-payload + PHRASE form).
+ * Returns the phrase text and emits `UNKNOWN_CALENDAR`.
+ */
+export function degradeLegacyCalendarToPhrase(
+  node: GedcomNode,
+  value: string,
+  name: "ROMAN" | "UNKNOWN",
+  diagnostics: Diagnostic[]
+): string {
+  const datePart = normalizeCalendarEscapes(value)
+    .replace(new RegExp(`\\b${name}\\b`, "g"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  diagnostics.push({
+    severity: "warning",
+    code: "UNKNOWN_CALENDAR",
+    message: `The ${legacyCalendarLabel(name)} calendar is not defined in GEDCOM 7; preserved the date as a PHRASE.`,
+    location: withOptionalLocation(node)
+  });
+
+  const label = `${legacyCalendarLabel(name)} calendar`;
+  return datePart ? `${datePart} (${label})` : label;
+}
+
+/**
+ * v7 → 5.5.1: re-wrap a bare `ROMAN`/`UNKNOWN` keyword in the 5.5.1 `@#D…@`
+ * escape (which 5.5.1 does list), emitting `UNKNOWN_CALENDAR`. No-op otherwise.
+ */
+export function reescapeLegacyCalendar(
+  node: GedcomNode,
+  value: string | undefined,
+  diagnostics: Diagnostic[]
+): string | undefined {
+  if (!value) {
+    return value;
+  }
+
+  let changed: "ROMAN" | "UNKNOWN" | null = null;
+  const result = value.replace(/\b(ROMAN|UNKNOWN)\b/g, (match) => {
+    changed = match as "ROMAN" | "UNKNOWN";
+    return `@#D${match}@`;
+  });
+
+  if (changed) {
+    diagnostics.push({
+      severity: "warning",
+      code: "UNKNOWN_CALENDAR",
+      message: `Re-wrapped the undefined ${legacyCalendarLabel(changed)} calendar in the GEDCOM 5.5.1 @#D…@ escape form.`,
+      location: withOptionalLocation(node)
+    });
+  }
+
+  return result;
+}
+
 /** Normalise 5.5.1 `@#D…@` calendar escapes to their bare keyword form for tokenising. */
 function normalizeCalendarEscapes(value: string): string {
   return value.replace(/@#D([A-Z]+(?:\s[A-Z]+)?)@/g, (_match, inner: string) => inner.replace(/\s+/g, "_"));
