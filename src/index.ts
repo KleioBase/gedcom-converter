@@ -7,7 +7,8 @@ import { decodeInput } from "./utils/text.js";
 import type { DetectedVersion, ParseOptions, ParsedDocument, StringifyOptions, SupportedVersion } from "./types.js";
 
 export { convertGedcom } from "./convert/index.js";
-export { parseGedcomZip, looksLikeZip } from "./gedzip/index.js";
+export { parseGedcomZip, stringifyGedcomZip, looksLikeZip } from "./gedzip/index.js";
+export type { StringifyGedcomZipOptions } from "./gedzip/index.js";
 export type {
   ConversionResult,
   ConvertOptions,
