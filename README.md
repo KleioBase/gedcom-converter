@@ -9,6 +9,7 @@ It is built for applications that need to work with real genealogy data across G
 ## What it does
 
 - detects GEDCOM versions from text or bytes
+- decodes input byte streams from ANSEL (the pre-7.0 default), UTF-16, or UTF-8 based on the BOM and `1 CHAR`
 - parses GEDCOM into a structured document model
 - stringifies parsed documents back into GEDCOM text
 - converts supported versions into other supported versions
@@ -77,6 +78,12 @@ console.log(result.output);
 console.log(result.diagnostics);
 ```
 
+## Examples
+
+Runnable recipes live in [`examples/`](./examples/README.md) — parsing, building a
+document, converting with diagnostics, severity reports, and GEDZIP bundling. Run
+any with `npx tsx examples/<name>.ts`.
+
 ## API
 
 ### `detectGedcomVersion(input)`
@@ -96,6 +103,20 @@ Parses GEDCOM text into a `ParsedDocument`.
 
 Serializes a parsed document into GEDCOM text for the requested version.
 
+### `parseGedcomZip(input)`
+
+Parses a FamilySearch GEDZIP (`.gdz`) archive. Returns a `Promise<ParsedGedzip>`
+with the parsed `document`, a `files` map of bundled media (keyed by archive path),
+and `diagnostics`. Encrypted archives reject with a clear error; `META-INF` entries
+are ignored with a diagnostic. Use `looksLikeZip(input)` to detect GEDZIP bytes.
+
+### `stringifyGedcomZip(document, files, { version, lineEnding?, diagnostics? })`
+
+Serializes a document and its bundled media into a GEDZIP (`.gdz`) archive
+(`Promise<Uint8Array>`). The dataset is written as `gedcom.ged` (deflated);
+already-compressed media is stored. Pass a `diagnostics` array to collect a
+`GEDZIP_FILE_MISSING` warning for any referenced local file you didn't provide.
+
 ### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
 
 Converts a GEDCOM file and returns:
@@ -103,6 +124,28 @@ Converts a GEDCOM file and returns:
 - `output`
 - `diagnostics`
 - `stats`
+
+## CLI
+
+The package ships a `gedcom-convert` binary:
+
+```bash
+gedcom-convert detect <file>
+gedcom-convert parse <file> [--version <v>]
+gedcom-convert stringify <input.json> --version <v> [-o <out>]
+gedcom-convert convert <input> --to <v> [--from <v>] [-o <out>] [--strict] [--preserve-unknown]
+gedcom-convert validate <file> [--against <v>]
+gedcom-convert roundtrip <file> [--version <v>]
+```
+
+A `<file>` of `-` reads from standard input; without `-o`, output goes to standard
+output, so commands pipe cleanly. Exit codes: `0` success, `1` error, `2`
+strict-mode warning, `64` usage error. Diagnostics print to stderr (coloured on a
+TTY; honours `NO_COLOR`). Run with `--help` for usage.
+
+```bash
+npx @kleiobase/gedcom-converter convert input.ged --to 5.5.1 -o output.ged
+```
 
 ## Conversion model
 
@@ -162,13 +205,40 @@ Generated 5.5.1 output from the official `maximal70.ged` sample has been validat
 
 Validation does not mean all conversions are lossless. Some GEDCOM 7 constructs still need to be preserved as `_TAG` data when GEDCOM 5.5.1 has no clean equivalent.
 
+## Character encodings and line endings
+
+Input byte streams (`Uint8Array`) are decoded automatically based on the byte-order
+mark and the `1 CHAR` declaration:
+
+| Declared / detected | Decoded as |
+| --- | --- |
+| UTF-8 BOM, or `1 CHAR UTF-8` / `ASCII` | UTF-8 (ASCII is a subset) |
+| UTF-16 BOM (`FF FE` / `FE FF`), or `1 CHAR UNICODE` | UTF-16 LE / BE |
+| `1 CHAR ANSEL` (the pre-7.0 default) | ANSEL, including combining diacritics (reordered + NFC-composed) |
+
+GEDCOM 7 output is always UTF-8 (spec mandate); 5.5.1 output is UTF-8 with a
+`1 CHAR UTF-8` header. Passing a `string` skips decoding (only the BOM is stripped).
+
+CR, LF, and CRLF line endings are all parsed, and the parser produces identical
+records regardless of the input style. The serializer emits LF by default; pass
+`lineEnding` to choose:
+
+```ts
+stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
+```
+
 ## Limits
 
 - textual `.ged` files only
-- no CLI package yet
-- no GEDZIP support
+- GEDZIP `.gdz` reading and writing are supported (`parseGedcomZip` / `stringifyGedcomZip`)
 - no full semantic GEDCOM schema validator yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
+
+## Releases
+
+- Version history: [`CHANGELOG.md`](./CHANGELOG.md)
+- Public API surface and stability: [`docs/api-stability.md`](./docs/api-stability.md)
+- Versioning and publishing policy: [`docs/release-process.md`](./docs/release-process.md)
 
 ## References
 

@@ -220,7 +220,10 @@ describe("stringifyGedcom", () => {
     expect(output).toContain("1 NOTE This file is intended to provide coverage");
     expect(output).toContain("[Translation] Diese Datei soll Teile der Spezifikation abdecken");
     expect(output).toContain("Transmission time zone: Z");
-    expect(output).toContain("Schema tag: _SKYPEID http://xmlns.com/foaf/0.1/skypeID");
+    // GED-20: SCHMA is preserved as a round-trippable _SCHMA HEAD block (with URIs),
+    // not flattened into prose notes.
+    expect(output).toContain("1 _SCHMA");
+    expect(output).toContain("2 _TAG _SKYPEID http://xmlns.com/foaf/0.1/skypeID");
   });
 
   it("normalizes unsupported header time zone suffixes into legal GEDCOM 5.5.1 TIME values", () => {

@@ -1,4 +1,4 @@
-import type { GedcomNode, ParsedDocument } from "../types.js";
+import type { GedcomLineEnding, GedcomNode, ParsedDocument } from "../types.js";
 import { stringifyGedcomTree } from "../utils/lines.js";
 import { GEDCOM7_VERSION } from "./schema.js";
 
@@ -69,7 +69,7 @@ function buildHead(document: ParsedDocument): GedcomNode {
   };
 }
 
-export function stringifyGedcom7(document: ParsedDocument): string {
+export function stringifyGedcom7(document: ParsedDocument, lineEnding: GedcomLineEnding = "LF"): string {
   const nodes: GedcomNode[] = [
     buildHead(document),
     ...document.records.map((record) => toRootNode(record)),
@@ -81,5 +81,5 @@ export function stringifyGedcom7(document: ParsedDocument): string {
     }
   ];
 
-  return stringifyGedcomTree(nodes, { mode: "gedcom7" });
+  return stringifyGedcomTree(nodes, { mode: "gedcom7", lineEnding });
 }

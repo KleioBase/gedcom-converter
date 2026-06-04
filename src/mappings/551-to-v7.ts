@@ -12,6 +12,7 @@ import {
 } from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 import { mapGedcom551DateNodeToV7 } from "./date/551-to-v7.js";
+import { joinTagPayload, splitTagPayload, syntheticTagUri } from "./schema.js";
 
 interface MappingContext {
   parentTag?: string;
@@ -31,6 +32,8 @@ const LEGACY_AGE_KEYWORDS = new Set(["CHILD", "INFANT", "STILLBORN"]);
 // to the original 5.5.1 tag. Keep these endings stable.
 const RIN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RIN";
 const RFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/RFN#";
+// mapExidNode in v7-to-551.ts recovers AFN from any EXID whose TYPE ends in `/AFN`.
+const AFN_EXID_TYPE_URI = "https://kleiobase.io/terms/legacy/551/AFN";
 
 // Inverse of mapMimeToForm in src/mappings/v7-to-551.ts (lines 82-107). Keep
 // the two tables symmetric: any 5.5.1 FORM value here should appear as a v7
@@ -422,8 +425,12 @@ function mapResnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   });
 }
 
+// The `_SCHMA` HEAD block (and its `_TAG` children) is the carrier for SCHMA data
+// across a 5.5.1 hop; it is reconstructed as a real SCHMA, never declared as data.
+const SCHEMA_MECHANISM_TAGS = new Set(["_SCHMA", "_TAG"]);
+
 function collectCustomTagsFromNode(node: GedcomNode, tags: Set<string>): void {
-  if (node.tag.startsWith("_")) {
+  if (node.tag.startsWith("_") && !SCHEMA_MECHANISM_TAGS.has(node.tag)) {
     tags.add(node.tag);
   }
 
@@ -452,6 +459,24 @@ function collectCustomTags(document: ParsedDocument): string[] {
   return [...tags].sort();
 }
 
+/** Recover documented URIs preserved in a 5.5.1 `_SCHMA` HEAD block (from a prior down-conversion). */
+function collectPreservedSchemaUris(document: ParsedDocument): Map<string, string> {
+  const uris = new Map<string, string>();
+  const schemaBlock = document.header.raw.children.find((child) => child.tag === "_SCHMA");
+
+  for (const tagNode of schemaBlock?.children ?? []) {
+    if (tagNode.tag !== "_TAG" && tagNode.tag !== "TAG") {
+      continue;
+    }
+    const parsed = splitTagPayload(tagNode.value);
+    if (parsed?.uri) {
+      uris.set(parsed.tag, parsed.uri);
+    }
+  }
+
+  return uris;
+}
+
 function buildGedcomNode(): GedcomNode {
   return makeNode({
     level: 1,
@@ -467,30 +492,46 @@ function buildGedcomNode(): GedcomNode {
   });
 }
 
-function buildSchemaNode(customTags: string[]): GedcomNode | null {
+function buildSchemaNode(
+  customTags: string[],
+  preservedUris: Map<string, string>,
+  diagnostics: Diagnostic[]
+): GedcomNode | null {
   if (customTags.length === 0) {
     return null;
   }
 
+  // Each documented extension tag needs a URI (§1.5.1). Prefer a URI preserved
+  // from a `_SCHMA` round-trip; otherwise synthesise one and flag it for review.
   return makeNode({
     level: 1,
     tag: "SCHMA",
-    children: customTags.map((tag) =>
-      makeNode({
+    children: customTags.map((tag) => {
+      const preserved = preservedUris.get(tag);
+      const uri = preserved ?? syntheticTagUri(tag);
+      if (!preserved) {
+        diagnostics.push({
+          severity: "info",
+          code: "SCHMA_TAG_SYNTHESIZED",
+          message: `Declared extension tag ${tag} in SCHMA with a synthetic URI (${uri}); supply a documented URI for portability.`,
+          location: { tag: "SCHMA" }
+        });
+      }
+      return makeNode({
         level: 2,
         tag: "TAG",
-        value: tag,
+        value: joinTagPayload(tag, uri),
         children: []
-      })
-    )
+      });
+    })
   });
 }
 
-function mapHeader(document: ParsedDocument): ParsedDocument["header"] {
+function mapHeader(document: ParsedDocument, diagnostics: Diagnostic[]): ParsedDocument["header"] {
   const preservedChildren = document.header.raw.children
     .filter((child) => PRESERVED_HEADER_TAGS.has(child.tag))
     .map((child) => cloneAtLevel(child, 1));
-  const schemaNode = buildSchemaNode(collectCustomTags(document));
+  const schemaNode = buildSchemaNode(collectCustomTags(document), collectPreservedSchemaUris(document), diagnostics);
 
   return {
     ...document.header,
@@ -722,6 +763,60 @@ function mapRfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return makeIdentifierExidNode(node, RFN_EXID_TYPE_URI);
 }
 
+// GEDCOM 5.5.1 carried phonetic (FONE) and romanized (ROMN) variations of names
+// and places, each with a TYPE naming the method (e.g. `kana`, `pinyin`). GEDCOM 7
+// removed both and represents every alternate rendering with TRAN (§ NAME-TRAN /
+// PLAC-TRAN), which requires a LANG substructure and has no slot for the method.
+// We emit `LANG und` (BCP-47 "undetermined") and preserve any name-piece children;
+// the method TYPE has no v7 home and is dropped with a diagnostic.
+const UNDETERMINED_LANG = "und";
+
+function mapPhoneticOrRomanizedVariation(
+  node: GedcomNode,
+  context: MappingContext,
+  diagnostics: Diagnostic[]
+): GedcomNode {
+  const kind = node.tag === "FONE" ? "phonetic" : "romanized";
+  const methodChild = node.children.find((child) => child.tag === "TYPE" && child.value);
+
+  diagnostics.push({
+    severity: "info",
+    code: node.tag === "FONE" ? "FONE_TO_TRAN" : "ROMN_TO_TRAN",
+    message: methodChild?.value
+      ? `Converted GEDCOM 5.5.1 ${kind} variation (${node.tag} TYPE ${methodChild.value}) to a GEDCOM 7 TRAN; the method is not representable in GEDCOM 7 and was dropped.`
+      : `Converted GEDCOM 5.5.1 ${kind} variation (${node.tag}) to a GEDCOM 7 TRAN.`,
+    location: withOptionalLocation(node)
+  });
+
+  const preservedChildren = node.children
+    .filter((child) => child.tag !== "TYPE")
+    .map((child) => mapNode(child, extendMappingContext(context, node.tag), diagnostics));
+
+  const hasLang = preservedChildren.some((child) => child.tag === "LANG");
+
+  return makeNode({
+    level: node.level,
+    tag: "TRAN",
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    children: hasLang
+      ? preservedChildren
+      : [
+          makeNode({ level: node.level + 1, tag: "LANG", value: UNDETERMINED_LANG, children: [] }),
+          ...preservedChildren
+        ]
+  });
+}
+
+function mapAfnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  diagnostics.push({
+    severity: "info",
+    code: "AFN_TO_EXID",
+    message: `Mapped GEDCOM 5.5.1 AFN ${node.value ?? ""} to GEDCOM 7 EXID with legacy TYPE URI (AFN is not a v7 standard tag).`,
+    location: withOptionalLocation(node)
+  });
+  return makeIdentifierExidNode(node, AFN_EXID_TYPE_URI);
+}
+
 function mapFormNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const raw = node.value?.trim();
   const mappedChildren = node.children.map(cloneNode);
@@ -854,6 +949,33 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
     return mapRfnNode(node, diagnostics);
   }
 
+  if (node.tag === "AFN") {
+    return mapAfnNode(node, diagnostics);
+  }
+
+  // GEDCOM 5.5.1 has no standard UID, so applications stored UUIDs in the `_UID`
+  // extension. GEDCOM 7 added a standard UID (§5 g7:UID); promote it so the value
+  // becomes first-class data rather than an undeclared SCHMA extension.
+  if (node.tag === "_UID") {
+    diagnostics.push({
+      severity: "info",
+      code: "UID_PROMOTED",
+      message: `Promoted GEDCOM 5.5.1 _UID ${node.value ?? ""} to the standard GEDCOM 7 UID tag.`,
+      location: withOptionalLocation(node)
+    });
+    return makeNode({
+      level: node.level,
+      tag: "UID",
+      ...(node.value !== undefined ? { value: node.value } : {}),
+      children: node.children.map(cloneNode)
+    });
+  }
+
+  // FONE/ROMN exist under both NAME and PLAC in 5.5.1 but were removed in v7.
+  if ((node.tag === "FONE" || node.tag === "ROMN") && (context.parentTag === "NAME" || context.parentTag === "PLAC")) {
+    return mapPhoneticOrRomanizedVariation(node, context, diagnostics);
+  }
+
   // FORM is overloaded across the 5.5.1 spec — only translate to MIME when it
   // describes a multimedia FILE format. HEAD.GEDC.FORM and PLAC.FORM use the
   // same tag for different semantics and must pass through verbatim.
@@ -914,7 +1036,7 @@ export function mapGedcom551DocumentToV7(document: ParsedDocument): ParsedDocume
 
   // SCHMA must declare every custom tag in the *mapped* document, not the source,
   // because the mapper itself may introduce new extensions (e.g. _RESN fallback).
-  const header = mapHeader({ ...document, records: mappedRecords });
+  const header = mapHeader({ ...document, records: mappedRecords }, diagnostics);
 
   return {
     version: "7.0.18",

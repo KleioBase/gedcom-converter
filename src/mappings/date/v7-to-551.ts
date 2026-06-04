@@ -1,4 +1,6 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
+import { reescapeLegacyCalendar, validateFrenchRepublicanDate } from "./calendar-validation.js";
+import { applyHebrewAdarResolution } from "./hebrew.js";
 
 const DATE_CALENDAR_ESCAPES: Record<string, string> = {
   GREGORIAN: "@#DGREGORIAN@",
@@ -42,9 +44,12 @@ export function convertGedcom7DateValueTo551(value: string | undefined): string 
 }
 
 export function mapGedcom7DateNodeTo551(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  validateFrenchRepublicanDate(node, node.value, diagnostics);
+
   const phraseNode = node.children.find((child) => child.tag === "PHRASE");
   const otherChildren = node.children.filter((child) => child.tag !== "PHRASE");
-  const convertedValue = convertGedcom7DateValueTo551(node.value);
+  const reescaped = reescapeLegacyCalendar(node, convertGedcom7DateValueTo551(node.value), diagnostics);
+  const convertedValue = applyHebrewAdarResolution(node, reescaped, diagnostics);
 
   let outputValue = convertedValue;
 
