@@ -234,6 +234,11 @@ stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 - no full semantic GEDCOM schema validator yet
 - some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
 
+## Releases
+
+- Version history: [`CHANGELOG.md`](./CHANGELOG.md)
+- Versioning and publishing policy: [`docs/release-process.md`](./docs/release-process.md)
+
 ## References
 
 - [GEDCOM 7.0.18 specification](https://gedcom.io/specifications/FamilySearchGEDCOMv7.html)
