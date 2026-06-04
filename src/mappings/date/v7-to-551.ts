@@ -1,4 +1,5 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
+import { applyHebrewAdarResolution } from "./hebrew.js";
 
 const DATE_CALENDAR_ESCAPES: Record<string, string> = {
   GREGORIAN: "@#DGREGORIAN@",
@@ -44,7 +45,7 @@ export function convertGedcom7DateValueTo551(value: string | undefined): string 
 export function mapGedcom7DateNodeTo551(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const phraseNode = node.children.find((child) => child.tag === "PHRASE");
   const otherChildren = node.children.filter((child) => child.tag !== "PHRASE");
-  const convertedValue = convertGedcom7DateValueTo551(node.value);
+  const convertedValue = applyHebrewAdarResolution(node, convertGedcom7DateValueTo551(node.value), diagnostics);
 
   let outputValue = convertedValue;
 

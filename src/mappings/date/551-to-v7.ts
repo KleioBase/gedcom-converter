@@ -1,4 +1,5 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
+import { applyHebrewAdarResolution } from "./hebrew.js";
 
 // Inverse of DATE_CALENDAR_ESCAPES in ./v7-to-551.ts. 5.5.1 wraps the calendar
 // identifier in @#D…@; v7 prepends a bare keyword to the date payload. The
@@ -138,11 +139,13 @@ export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnost
   const phraseInfo = node.value !== undefined ? extractDatePhrase(node.value) : undefined;
   const dateToConvert = phraseInfo ? phraseInfo.date : node.value;
 
-  const { value, calendarConverted, epochConverted } = convertGedcom551DateValueToV7(
+  const converted = convertGedcom551DateValueToV7(
     dateToConvert === "" ? undefined : dateToConvert,
     diagnostics,
     node
   );
+  const { calendarConverted, epochConverted } = converted;
+  const value = applyHebrewAdarResolution(node, converted.value, diagnostics);
 
   if (calendarConverted) {
     diagnostics.push({
