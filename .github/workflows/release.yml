@@ -1,0 +1,68 @@
+name: Release
+
+# Publishes to npm when a version tag is pushed (e.g. `v0.2.0`, `v0.3.0-alpha.1`).
+# Authentication is npm Trusted Publishing (OIDC) — no NPM_TOKEN secret is stored.
+# Configure the trusted publisher for @kleiobase/gedcom-converter on npmjs.com,
+# pointing at this repository and the `release.yml` workflow, before the first run.
+# See docs/release-process.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC trusted publishing + provenance
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm
+        # Trusted Publishing (OIDC) requires npm >= 11.5.1, newer than the npm
+        # bundled with Node 20.
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Publishing version $PKG_VERSION"
+
+      - name: Determine dist-tag
+        id: disttag
+        # A SemVer pre-release (version contains a hyphen) publishes under its
+        # pre-release identifier (alpha/beta/rc); a stable version goes to latest.
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          case "$PKG_VERSION" in
+            *-alpha*) echo "tag=alpha" >> "$GITHUB_OUTPUT" ;;
+            *-beta*)  echo "tag=beta"  >> "$GITHUB_OUTPUT" ;;
+            *-rc*)    echo "tag=rc"    >> "$GITHUB_OUTPUT" ;;
+            *)        echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Publish
+        # prepublishOnly (typecheck + test) and prepack (build) run automatically.
+        # --provenance attaches a verifiable build attestation to the release.
+        run: npm publish --provenance --access public --tag "${{ steps.disttag.outputs.tag }}"

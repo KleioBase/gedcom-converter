@@ -43,6 +43,22 @@ Install a pre-release explicitly with
 - There are no long-lived release branches. Hotfixes also land on `main` first
   and are released from there.
 
+## Bootstrapping the first publish
+
+npm only lets you configure a Trusted Publisher on a package that already
+exists, so the very first publish is done manually and CI takes over afterwards.
+
+1. Publish `0.2.0` once from a maintainer machine. Provenance is CI-only, so it
+   is omitted here: `npm publish --access public`. If the npm org enforces 2FA
+   and you have no authenticator, create a short-lived granular access token with
+   write access to the `@kleiobase` scope and the "bypass two-factor
+   authentication" option enabled, then
+   `npm config set //registry.npmjs.org/:_authToken <token>` before publishing.
+2. On the new package's settings page on npmjs.com, add a Trusted Publisher
+   pointing at this repository and the `release.yml` workflow.
+3. Revoke the bootstrap token. Every release from the next version onward goes
+   through CI with no stored secret (see below).
+
 ## Cutting a release
 
 1. Confirm `main` is green: `npm ci && npm run typecheck && npm test && npm run build`.
