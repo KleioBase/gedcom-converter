@@ -4,7 +4,7 @@ import { isHebrewLeapYear, resolveHebrewAdar } from "../src/mappings/date/hebrew
 
 // Hebrew ADR (Adar I) / ADS (Adar II) leap-year resolution.
 //
-// NOTE: the Linear ticket's acceptance examples have the years swapped. The
+// NOTE: some acceptance examples we received have the years swapped. The
 // Metonic rule `(7y+1) mod 19 < 7` and the real calendar agree that 5784 IS a
 // leap year (it had Adar I + Adar II; Purim fell in Adar II, March 2024) and
 // 5783 is a common year. These tests assert the mathematically correct values.
