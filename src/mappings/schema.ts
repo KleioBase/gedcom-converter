@@ -1,4 +1,4 @@
-// GED-20 — SCHMA extension-declaration helpers shared by both directions.
+// SCHMA extension-declaration helpers shared by both directions.
 //
 // GEDCOM 7 §1.5.1: a documented extension tag is declared in HEAD.SCHMA as
 // `2 TAG <extTag> <URI>` — the tag's meaning is its URI, not its spelling. The

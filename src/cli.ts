@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { convertGedcom, detectGedcomVersion, parseGedcom, stringifyGedcom } from "./index.js";
 import type { Diagnostic, SupportedVersion } from "./types.js";
 
-// GED-21 — `gedcom-convert` CLI. The logic lives here as a testable `runCli`
+// `gedcom-convert` CLI. The logic lives here as a testable `runCli`
 // returning an exit code; `bin/gedcom-convert.mjs` is a thin process wrapper.
 
 export interface CliIo {

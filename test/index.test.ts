@@ -220,7 +220,7 @@ describe("stringifyGedcom", () => {
     expect(output).toContain("1 NOTE This file is intended to provide coverage");
     expect(output).toContain("[Translation] Diese Datei soll Teile der Spezifikation abdecken");
     expect(output).toContain("Transmission time zone: Z");
-    // GED-20: SCHMA is preserved as a round-trippable _SCHMA HEAD block (with URIs),
+    // SCHMA is preserved as a round-trippable _SCHMA HEAD block (with URIs),
     // not flattened into prose notes.
     expect(output).toContain("1 _SCHMA");
     expect(output).toContain("2 _TAG _SKYPEID http://xmlns.com/foaf/0.1/skypeID");
@@ -339,7 +339,8 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 DEST KleioBase Test");
     expect(result.output).toContain("1 DATE 19 MAY 2026");
     expect(result.output).toContain("1 SUBM @SUBM1@");
-    expect(result.output).toContain("1 FILE sample.ged");
+    // GEDCOM 7 has no HEAD.FILE; the exporter filename is preserved as a _FILE extension.
+    expect(result.output).toContain("1 _FILE sample.ged");
     expect(result.output).toContain("1 COPR Copyright");
     expect(result.output).toContain("1 NOTE Header note");
     expect(result.output).toContain("1 PLAC");
@@ -1422,9 +1423,13 @@ describe("convertGedcom", () => {
       to: "7.0.18"
     });
 
-    expect(result.output).toContain("1 OBJE");
-    expect(result.output).toContain("2 FILE photo.jpg");
-    expect(result.output).toContain("3 FORM image/jpeg");
+    // The embedded OBJE is promoted to a GEDCOM 7 multimedia record (referenced by
+    // a pointer); within that record FORM is a MIME type under FILE and TITL nests
+    // under FILE too.
+    expect(result.output).toMatch(/1 OBJE @[^@]+@/);
+    expect(result.output).toMatch(/\n0 @[^@]+@ OBJE/);
+    expect(result.output).toContain("1 FILE photo.jpg");
+    expect(result.output).toContain("2 FORM image/jpeg");
     expect(result.output).toContain("2 TITL Family portrait");
     expect(result.output).not.toContain("3 FORM jpeg");
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FORM_TO_MIME_CONVERTED")).toBe(true);
@@ -1635,12 +1640,13 @@ describe("convertGedcom", () => {
 
     expect(roundTripped.output).toContain("1 OBJE");
     expect(roundTripped.output).toContain("2 FILE photo.jpg");
-    // Round-trip is value-preserving but structurally normalised by the
-    // existing v7→5.5.1 path: FILE_FORM_ALIASES collapses jpeg→jpg, FORM is
-    // re-emitted at level 2 (sibling of FILE) rather than level 3, and TITL
-    // is hoisted into an explanatory NOTE. The title text still survives.
-    expect(roundTripped.output).toContain("2 FORM jpg");
-    expect(roundTripped.output).toMatch(/Family portrait/);
+    // For an inline OBJE, FORM nests under FILE (level 3) while TITL returns to a
+    // direct OBJE child (level 2) — the 5.5.1 embedded-multimedia layout. jpeg is
+    // normalised to jpg and the title survives as a structured TITL, not a note.
+    expect(roundTripped.output).toContain("3 FORM jpg");
+    expect(roundTripped.output).toContain("2 TITL Family portrait");
+    expect(roundTripped.output).not.toContain("3 TITL Family portrait");
+    expect(roundTripped.output).not.toMatch(/NOTE.*Family portrait/);
   });
 
   it("round-trips a GEDCOM 5.5.1 DATE with Julian calendar escape through GEDCOM 7 and back", () => {
@@ -2227,7 +2233,7 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("2 TYPE Fact type");
   });
 
-  it("rewrites leftover _VALUE children as notes on event and residence structures", () => {
+  it("preserves event and residence values verbatim instead of noting them", () => {
     const input = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
@@ -2243,15 +2249,16 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(result.output).toContain("1 RESI");
+    // A value alongside an existing TYPE is kept on the line; it is not stripped
+    // to a note (and the structure is not guessed to be a different tag).
+    expect(result.output).toContain("1 RESI Residence");
     expect(result.output).toContain("2 TYPE Type of residence");
-    expect(result.output).toContain("2 NOTE Residence value: Residence");
-    expect(result.output).toContain("1 EVEN");
+    expect(result.output).toContain("1 EVEN Fact");
     expect(result.output).toContain("2 TYPE Type of fact");
-    expect(result.output).toContain("2 NOTE Event value: Fact");
-    expect(result.output).not.toContain("_VALUE Residence");
-    expect(result.output).not.toContain("_VALUE Fact");
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "VALUE_NOTED")).toBe(true);
+    expect(result.output).not.toMatch(/NOTE Residence value:/);
+    expect(result.output).not.toMatch(/NOTE Event value:/);
+    expect(result.output).not.toContain("_VALUE");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "VALUE_NOTED")).toBe(false);
   });
 
   it("drops redundant or sorting-only phrase fallbacks when GEDCOM 5.5.1 already carries the meaning", () => {
@@ -2656,7 +2663,7 @@ describe("convertGedcom", () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "NOTE_SOURCE_CITATION_NOTED")).toBe(true);
   });
 
-  it("hoists unsupported file formats and file translations into object notes", () => {
+  it("preserves a supported FILE and hoists v7-only file translations into object notes", () => {
     const input = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
@@ -2675,22 +2682,21 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(result.output).not.toContain("2 _FORM mp3");
-    expect(result.output).not.toContain("2 _TRAN media/derived.oga");
-    expect(result.output).not.toContain("2 _TRAN media/transcript.vtt");
-    expect(result.output).toContain("1 NOTE File format: mp3");
-    expect(result.output).toContain("1 NOTE File reference: media/original.mp3");
-    expect(result.output).toContain("1 NOTE File translation: media/derived.oga");
-    expect(result.output).toContain("[Format: audio/ogg]");
-    expect(result.output).toContain("1 NOTE File translation: media/transcript.vtt");
-    expect(result.output).toContain("[Format: text/vtt]");
+    // The primary FILE/FORM is a supported format and stays structured.
+    expect(result.output).toContain("1 FILE media/original.mp3");
+    expect(result.output).toContain("2 FORM mp3");
+    expect(result.output).toContain("3 TYPE AUDIO");
     expect(result.output).not.toContain("_FILE media/original.mp3");
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_TRANSLATION_NOTED")).toBe(true);
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_FORMAT_NOTED")).toBe(true);
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_REFERENCE_NOTED")).toBe(true);
+    // v7 FILE.TRAN (alternate renditions) has no 5.5.1 equivalent and is noted.
+    expect(result.output).toContain("1 NOTE File translation: media/derived.oga");
+    expect(result.output).toContain("1 NOTE File translation: media/transcript.vtt");
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "FILE_TRANSLATION_NOTED",
+      "FILE_TRANSLATION_NOTED"
+    ]);
   });
 
-  it("hoists unsupported object titles and crop rectangles into object notes", () => {
+  it("keeps a file TITL but hoists object-level titles and crop rectangles into object notes", () => {
     const input = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
@@ -2712,12 +2718,15 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(result.output).toContain("1 NOTE File title: Object title");
+    // A TITL under FILE is native 5.5.1 and is preserved structurally.
+    expect(result.output).toContain("2 TITL Object title");
+    expect(result.output).not.toMatch(/NOTE File title:/);
+    // CROP and the non-standard OBJE-level TITL are still hoisted to notes.
     expect(result.output).toContain("1 NOTE Crop: top 0, left 0, height 100, width 100");
     expect(result.output).toContain("1 NOTE Object title: Root title");
     expect(result.output).not.toContain("_TITL");
     expect(result.output).not.toContain("_CROP");
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_TITLE_NOTED")).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_TITLE_NOTED")).toBe(false);
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FILE_CROP_NOTED")).toBe(true);
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "OBJECT_TITLE_NOTED")).toBe(true);
   });
@@ -2818,18 +2827,18 @@ describe("convertGedcom", () => {
     });
 
     expect(result.output).toContain("0 @I1@ INDI");
-    expect(result.output).toContain("1 NOTE UID: 123e4567-e89b-12d3-a456-426614174000");
+    expect(result.output).toContain("1 _UID 123e4567-e89b-12d3-a456-426614174000");
     expect(result.output).toContain("1 REFN 42");
     expect(result.output).toContain("2 TYPE https://example.com/custom-id");
     expect(result.output).toContain("0 @U1@ SUBM");
-    expect(result.output).toContain("1 NOTE UID: submitter-uid");
+    expect(result.output).toContain("1 _UID submitter-uid");
     expect(result.output).toContain("1 NOTE External ID: 99");
     expect(result.output).toContain("2 CONT [Type: https://example.com/submitter-id]");
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "EXID_TO_REFN")).toBe(true);
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "EXID_PRESERVED")).toBe(true);
   });
 
-  it("merges multiple preserved UID values into note text", () => {
+  it("merges multiple preserved UID values into a single _UID", () => {
     const input = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
@@ -2843,12 +2852,12 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(result.output).toContain("1 NOTE UID: 123e4567-e89b-12d3-a456-426614174000");
+    expect(result.output).toContain("1 _UID 123e4567-e89b-12d3-a456-426614174000");
     expect(result.output).toContain("2 CONT 223e4567-e89b-12d3-a456-426614174000");
-    expect((result.output.match(/\n1 NOTE UID:/g) ?? [])).toHaveLength(1);
-    expect(result.output).not.toContain("_UID");
+    expect((result.output.match(/\n1 _UID /g) ?? [])).toHaveLength(1);
+    expect(result.output).not.toMatch(/NOTE UID:/);
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "UIDS_MERGED")).toBe(true);
-    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "UID_NOTED")).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "UID_NOTED")).toBe(false);
   });
 
   it("flattens generated child NOTE metadata into shared note record text", () => {
@@ -2943,49 +2952,21 @@ describe("convertGedcom", () => {
     });
 
     expect(notes.diagnostics).toHaveLength(0);
+    // Supported media formats now round-trip, so only the void pointers are noted.
     expect(memories.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       "VOID_POINTER_NOTED",
-      "VOID_POINTER_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED"
+      "VOID_POINTER_NOTED"
     ]);
   });
 
-  it("reduces filename fixture diagnostics to the unsupported media and file-length edge cases we still expect", () => {
+  it("reduces filename fixture diagnostics to the unsupported media and missing-format edge cases we still expect", () => {
     const result = convertGedcom(readFixture("official/gedcom70/filename-1.ged"), {
       from: "7.0.18",
       to: "5.5.1"
     });
 
     const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
-    expect(codes).toEqual([
-      "UNSUPPORTED_MEDIA_FORMAT",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_DEGRADED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_NOTED",
-      "FILE_FORMAT_NOTED"
-    ]);
+    expect(codes).toEqual(["UNSUPPORTED_MEDIA_FORMAT", "FILE_REFERENCE_NOTED"]);
   });
 
   it("can normalize a legacy GEDCOM 5.5 file into GEDCOM 5.5.1 output", () => {
@@ -3021,7 +3002,8 @@ describe("convertGedcom", () => {
 
     expect(result.output).not.toMatch(/\n\d+ UID\b/);
     expect(result.output).not.toMatch(/\n\d+ CREA\b/);
-    expect(result.output).not.toMatch(/\n\d+ _UID\b/);
+    // _UID is the de-facto 5.5.1 identifier and is now preserved, not noted.
+    expect(result.output).toMatch(/\n\d+ _UID\b/);
     expect(result.output).not.toMatch(/\n\d+ _CREA\b/);
     expect(result.output).not.toMatch(/\n\d+ TRAN\b/);
     expect(result.output).not.toMatch(/\n\d+ PHRASE\b/);

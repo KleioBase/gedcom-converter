@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { convertGedcom } from "../src/index.js";
 import { isHebrewLeapYear, resolveHebrewAdar } from "../src/mappings/date/hebrew.js";
 
-// GED-12 — Hebrew ADR (Adar I) / ADS (Adar II) leap-year resolution.
+// Hebrew ADR (Adar I) / ADS (Adar II) leap-year resolution.
 //
 // NOTE: the Linear ticket's acceptance examples have the years swapped. The
 // Metonic rule `(7y+1) mod 19 < 7` and the real calendar agree that 5784 IS a
@@ -24,7 +24,7 @@ function dateLine(output: string): string {
     .find((line) => line.startsWith("2 DATE")) ?? "";
 }
 
-describe("GED-12: isHebrewLeapYear", () => {
+describe("isHebrewLeapYear", () => {
   it("matches the Metonic leap-year cycle (3,6,8,11,14,17,19)", () => {
     expect(isHebrewLeapYear(5784)).toBe(true); // common-era 2023/24, two Adars
     expect(isHebrewLeapYear(5783)).toBe(false); // single Adar
@@ -36,7 +36,7 @@ describe("GED-12: isHebrewLeapYear", () => {
   });
 });
 
-describe("GED-12: resolveHebrewAdar (pure)", () => {
+describe("resolveHebrewAdar (pure)", () => {
   it("corrects ADR → ADS in a common year", () => {
     expect(resolveHebrewAdar("HEBREW 15 ADR 5783")).toEqual({ value: "HEBREW 15 ADS 5783", corrected: true });
   });
@@ -57,7 +57,7 @@ describe("GED-12: resolveHebrewAdar (pure)", () => {
   });
 });
 
-describe("GED-12: 5.5.1 → v7 up-conversion", () => {
+describe("5.5.1 → v7 up-conversion", () => {
   it("corrects ADR → ADS for a common year and emits a diagnostic", () => {
     const result = convertGedcom(doc551("0 @I1@ INDI\n1 DEAT\n2 DATE @#DHEBREW@ 15 ADR 5783"), {
       from: "5.5.1",
@@ -77,7 +77,7 @@ describe("GED-12: 5.5.1 → v7 up-conversion", () => {
   });
 });
 
-describe("GED-12: v7 → 5.5.1 down-conversion", () => {
+describe("v7 → 5.5.1 down-conversion", () => {
   it("corrects ADR → ADS for a common year", () => {
     const result = convertGedcom(doc7("0 @I1@ INDI\n1 DEAT\n2 DATE HEBREW 15 ADR 5783"), {
       from: "7.0.18",
@@ -97,7 +97,7 @@ describe("GED-12: v7 → 5.5.1 down-conversion", () => {
   });
 });
 
-describe("GED-12: round-trip preserves the correction", () => {
+describe("round-trip preserves the correction", () => {
   it("5.5.1 ADR (common year) → v7 ADS → 5.5.1 ADS", () => {
     const upped = convertGedcom(doc551("0 @I1@ INDI\n1 DEAT\n2 DATE @#DHEBREW@ 15 ADR 5783"), {
       from: "5.5.1",

@@ -16,7 +16,7 @@ const DATE_CALENDAR_ESCAPE_TO_KEYWORD: Record<string, string> = {
   "@#DHEBREW@": "HEBREW",
   "@#DFRENCH R@": "FRENCH_R"
   // ROMAN / UNKNOWN are intentionally absent: they are not v7 calendars and are
-  // degraded to a PHRASE before this table is consulted (GED-14).
+  // degraded to a PHRASE before this table is consulted.
 };
 
 const CALENDAR_ESCAPE_PATTERN = /@#D([A-Z]+(?:\s[A-Z]+)?)@/g;

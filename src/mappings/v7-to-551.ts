@@ -57,6 +57,14 @@ function cloneNode(node: GedcomNode): GedcomNode {
   };
 }
 
+function cloneAtLevel(node: GedcomNode, level: number): GedcomNode {
+  return {
+    ...node,
+    level,
+    children: node.children.map((child) => cloneAtLevel(child, level + 1))
+  };
+}
+
 function withOptionalLocation(node: GedcomNode): { line?: number; tag: string } {
   return {
     tag: node.tag,
@@ -286,26 +294,6 @@ function mapVoidPointerNodeToNote(node: GedcomNode, diagnostics: Diagnostic[]): 
   });
 }
 
-function inferMediaType(mime: string | undefined): string | undefined {
-  if (!mime) {
-    return undefined;
-  }
-
-  if (mime.startsWith("image/")) {
-    return "photo";
-  }
-
-  if (mime.startsWith("audio/")) {
-    return "audio";
-  }
-
-  if (mime.startsWith("video/")) {
-    return "video";
-  }
-
-  return "electronic";
-}
-
 function mapRoleToRela(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   const phrase = node.children.find((child) => child.tag === "PHRASE")?.value;
   let value = humanizeEnumValue(node.value);
@@ -464,7 +452,7 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
 
   // Restore 5.5.1's lowercase pedigree spelling for the standard enum values
   // (BIRTH → birth). PEDI OTHER is left to the compatibility layer, which hoists
-  // its descriptive PHRASE to a family-link note (see GED-19).
+  // its descriptive PHRASE to a family-link note.
   if (node.tag === "PEDI" && node.value) {
     const upper = node.value.toUpperCase();
     if (upper !== "OTHER" && PEDI_ENUM.has(upper)) {
@@ -530,16 +518,27 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
     const formNode = node.children.find((child) => child.tag === "FORM");
     const mediaTypeNode = formNode?.children.find((child) => child.tag === "MEDI");
     const mappedForm = mapMimeToForm(formNode?.value);
-    const mappedMediaType = mediaTypeNode?.value?.toLowerCase() ?? inferMediaType(formNode?.value);
+    // Only carry a media TYPE that actually exists (a v7 MEDI). Do not infer one
+    // from the format — that would invent a value the source never had.
+    const mappedMediaType = mediaTypeNode?.value?.toLowerCase();
 
     if (mappedForm) {
-      const formChildren = mappedMediaType
-        ? [makeNode({ level: 3, tag: "TYPE", value: mappedMediaType, children: [] })]
-        : [];
+      // Carry through every FORM child except MEDI (which maps to the 5.5.1
+      // FORM.TYPE), preserving standard TYPE and vendor extensions
+      // (_MTYPE/_SIZE/_WDTH/_HGHT/...) verbatim rather than discarding them.
+      const passthroughChildren = (formNode?.children ?? [])
+        .filter((child) => child.tag !== "MEDI")
+        .map((child) => cloneAtLevel(child, node.level + 2));
+      const hasTypeChild = passthroughChildren.some((child) => child.tag === "TYPE");
+
+      const formChildren =
+        mappedMediaType && !hasTypeChild
+          ? [makeNode({ level: node.level + 2, tag: "TYPE", value: mappedMediaType, children: [] }), ...passthroughChildren]
+          : passthroughChildren;
 
       mappedChildren.push(
         makeNode({
-          level: 2,
+          level: node.level + 1,
           tag: "FORM",
           value: mappedForm,
           children: formChildren
@@ -599,8 +598,47 @@ function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecor
   };
 }
 
+// Matches the reserved xref the up-converter assigns to records it synthesised
+// from embedded multimedia (see PROMOTED_OBJE_XREF_PREFIX in 551-to-v7).
+const PROMOTED_OBJE_XREF_RE = /^@_KBOBJE\d+@$/;
+
+// Reverse of the up-converter's inline-OBJE promotion: records carrying the
+// reserved xref are folded back into the pointer that references them, restoring
+// the original 5.5 embedded layout. Native OBJE records (any other xref) are left
+// untouched, so genuine v7 multimedia records still down-convert to 5.5.1 records.
+function reinlinePromotedObjeRecords(records: ParsedRecord[]): ParsedRecord[] {
+  const promoted = new Map<string, GedcomNode[]>();
+  for (const record of records) {
+    if (record.tag === "OBJE" && record.xref && PROMOTED_OBJE_XREF_RE.test(record.xref)) {
+      promoted.set(record.xref, record.children);
+    }
+  }
+
+  if (promoted.size === 0) {
+    return records;
+  }
+
+  const reinlineChildren = (children: GedcomNode[]): GedcomNode[] =>
+    children.map((child) => {
+      if (child.tag === "OBJE" && child.value && promoted.has(child.value)) {
+        const recordChildren = promoted.get(child.value)!;
+        return {
+          level: child.level,
+          tag: "OBJE",
+          children: reinlineChildren(recordChildren.map((grandchild) => cloneAtLevel(grandchild, child.level + 1)))
+        };
+      }
+      return { ...child, children: reinlineChildren(child.children) };
+    });
+
+  return records
+    .filter((record) => !(record.tag === "OBJE" && record.xref && PROMOTED_OBJE_XREF_RE.test(record.xref)))
+    .map((record) => ({ ...record, children: reinlineChildren(record.children) }));
+}
+
 export function mapGedcom7DocumentTo551(document: ParsedDocument): ParsedDocument {
   const diagnostics = [...document.diagnostics];
+  const reinlinedRecords = reinlinePromotedObjeRecords(document.records);
 
   return {
     version: "5.5.1",
@@ -609,7 +647,7 @@ export function mapGedcom7DocumentTo551(document: ParsedDocument): ParsedDocumen
       gedcomVersion: "5.5.1",
       characterSet: "UTF-8"
     },
-    records: document.records.map((record) => mapRecord(record, diagnostics)),
+    records: reinlinedRecords.map((record) => mapRecord(record, diagnostics)),
     extensions: document.extensions.map(cloneNode),
     diagnostics
   };

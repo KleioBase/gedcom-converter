@@ -5,7 +5,7 @@ import { parseGedcom, stringifyGedcom } from "../src/index.js";
 import { decodeInput } from "../src/utils/text.js";
 import type { GedcomNode, ParsedRecord } from "../src/types.js";
 
-// GED-16 — character-encoding + line-ending round-trip.
+// character-encoding + line-ending round-trip.
 
 function fixtureBytes(name: string): Uint8Array {
   return readFileSync(resolve(process.cwd(), "fixtures", name));
@@ -45,7 +45,7 @@ function recordShape(record: ParsedRecord) {
   return { ...record, children: record.children.map(stripLineNumbers) };
 }
 
-describe("GED-16: line-ending serializer option", () => {
+describe("line-ending serializer option", () => {
   const document = parseGedcom(decodeInput(fixtureBytes("minimal-7.0.18.ged")), { version: "7.0.18" });
 
   it("defaults to LF", () => {
@@ -77,7 +77,7 @@ describe("GED-16: line-ending serializer option", () => {
   });
 });
 
-describe("GED-16: UTF-16 decoding (LE and BE, with BOM)", () => {
+describe("UTF-16 decoding (LE and BE, with BOM)", () => {
   const text = "0 HEAD\n1 CHAR UNICODE\n0 @I1@ INDI\n1 NAME José /Müller/\n0 TRLR\n";
 
   it("decodes UTF-16LE", () => {
@@ -89,7 +89,7 @@ describe("GED-16: UTF-16 decoding (LE and BE, with BOM)", () => {
   });
 });
 
-describe("GED-16: ASCII decoding", () => {
+describe("ASCII decoding", () => {
   it("decodes an ASCII-declared stream as UTF-8 (its superset)", () => {
     const bytes = Uint8Array.from(ascii("0 HEAD\n1 CHAR ASCII\n0 @I1@ INDI\n1 NAME John /Doe/\n0 TRLR\n"));
     const decoded = decodeInput(bytes);
@@ -99,7 +99,7 @@ describe("GED-16: ASCII decoding", () => {
   });
 });
 
-describe("GED-16: CR and LF variants of the torture fixture yield identical IR", () => {
+describe("CR and LF variants of the torture fixture yield identical IR", () => {
   it("TGC551.ged (CR) and TGC551LF.ged (LF) parse to the same records", () => {
     const cr = parseGedcom(decodeInput(fixtureBytes("official/gedcom551/TGC551.ged")), { version: "5.5" });
     const lf = parseGedcom(decodeInput(fixtureBytes("official/gedcom551/TGC551LF.ged")), { version: "5.5" });
@@ -108,7 +108,7 @@ describe("GED-16: CR and LF variants of the torture fixture yield identical IR",
   });
 });
 
-describe("GED-16: ANSEL-encoded fixture decodes to expected accented characters", () => {
+describe("ANSEL-encoded fixture decodes to expected accented characters", () => {
   it("decodes the copyright sign and leaves no replacement characters in known text", () => {
     const decoded = decodeInput(fixtureBytes("official/gedcom551/TGC551LF.ged"));
     expect(decoded).toContain("© 1997 by H. Eichmann");

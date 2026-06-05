@@ -2,8 +2,8 @@ import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { looksLikeZip, parseGedcomZip } from "../src/index.js";
 
-// GED-17 — GEDZIP (.gdz) input parser. Fixtures are built in-memory with a tiny
-// ZIP writer so the reader is exercised independently of the GED-18 serializer.
+// GEDZIP (.gdz) input parser. Fixtures are built in-memory with a tiny
+// ZIP writer so the reader is exercised independently of the serializer.
 
 interface ZipInput {
   name: string;
@@ -90,7 +90,7 @@ const MINIMAL_GED = [
 
 const IMAGE_BYTES = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 
-describe("GED-17: looksLikeZip", () => {
+describe("looksLikeZip", () => {
   it("recognises the PK signature and rejects strings/plain text", () => {
     expect(looksLikeZip(makeZip([{ name: "gedcom.ged", bytes: asciiBytes(MINIMAL_GED) }]))).toBe(true);
     expect(looksLikeZip("0 HEAD\n0 TRLR\n")).toBe(false);
@@ -98,7 +98,7 @@ describe("GED-17: looksLikeZip", () => {
   });
 });
 
-describe("GED-17: parseGedcomZip", () => {
+describe("parseGedcomZip", () => {
   it("parses the dataset and surfaces embedded media bytes (stored)", async () => {
     const zip = makeZip([
       { name: "gedcom.ged", bytes: asciiBytes(MINIMAL_GED) },

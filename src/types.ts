@@ -89,6 +89,12 @@ export interface ConversionResult {
 export interface ParseOptions {
   /** Force a version instead of auto-detecting. */
   version?: ParseableVersion;
+  /**
+   * Reject the parse (throw) if any `warning` or `error` diagnostic is emitted,
+   * such as a recovered malformed line. Off by default: parsing is lenient and
+   * reports such issues as diagnostics so the caller can decide how to react.
+   */
+  strict?: boolean;
 }
 
 /** Line-ending style the serializer emits. GEDCOM permits CR, LF, or CRLF. */

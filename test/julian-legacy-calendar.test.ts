@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convertGedcom, parseGedcom } from "../src/index.js";
 
-// GED-14 — Julian epoch markers (BCE ↔ B.C.) and undefined legacy calendars
+// Julian epoch markers (BCE ↔ B.C.) and undefined legacy calendars
 // (ROMAN / UNKNOWN).
 
 function doc551(body: string): string {
@@ -33,7 +33,7 @@ function roundTrip551(date: string): string {
   return lines(convertGedcom(upped.output, { from: "7.0.18", to: "5.5.1" }).output);
 }
 
-describe("GED-14: Julian epoch markers", () => {
+describe("Julian epoch markers", () => {
   it("up: 5.5.1 B.C. → v7 BCE", () => {
     const result = up("@#DJULIAN@ 15 MAR 44 B.C.");
     expect(lines(result.output)).toBe("2 DATE JULIAN 15 MAR 44 BCE");
@@ -60,7 +60,7 @@ describe("GED-14: Julian epoch markers", () => {
   });
 });
 
-describe("GED-14: legacy ROMAN / UNKNOWN calendars (undefined)", () => {
+describe("legacy ROMAN / UNKNOWN calendars (undefined)", () => {
   it("up: ROMAN escape → empty DATE + PHRASE with UNKNOWN_CALENDAR", () => {
     const result = up("@#DROMAN@ 1 JAN 100");
     expect(lines(result.output)).toBe("2 DATE / 3 PHRASE 1 JAN 100 (Roman calendar)");

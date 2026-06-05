@@ -1,6 +1,6 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
 
-// GED-13 — French Republican calendar validation. The 13 month tags and the
+// French Republican calendar validation. The 13 month tags and the
 // `FRENCH_R` ↔ `@#DFRENCH R@` calendar identifier already pass through the date
 // converters unchanged; this adds the spec §6.1 constraints that have no other
 // home: the month must be one of the 13 known tags, and the calendar admits no
@@ -27,7 +27,7 @@ export const FRENCH_REPUBLICAN_MONTH_TAGS: readonly string[] = [...FRENCH_REPUBL
 const DATE_KEYWORDS = new Set(["FROM", "TO", "BET", "AND", "BEF", "AFT", "ABT", "CAL", "EST", "INT"]);
 const CALENDAR_KEYWORDS = new Set(["GREGORIAN", "JULIAN", "HEBREW", "FRENCH_R", "ROMAN", "UNKNOWN"]);
 
-// GED-14 — `ROMAN` and `UNKNOWN` were listed as calendar escapes in GEDCOM 5.5.1
+// `ROMAN` and `UNKNOWN` were listed as calendar escapes in GEDCOM 5.5.1
 // but never defined, and GEDCOM 7 does not define them either. They are neither
 // representable as a v7 calendar nor as a valid 5.5.1 calendar keyword (5.5.1
 // needs the `@#D…@` escape). We treat them as undefined: degraded to a PHRASE on

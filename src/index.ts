@@ -1,4 +1,4 @@
-import { ConversionError } from "./errors/index.js";
+import { ConversionError, ParseError } from "./errors/index.js";
 import { parseGedcom551 } from "./gedcom551/parser.js";
 import { stringifyGedcom551 } from "./gedcom551/serializer.js";
 import { parseGedcom7 } from "./gedcom7/parser.js";
@@ -70,15 +70,24 @@ export function detectGedcomVersion(input: string | Uint8Array): DetectedVersion
 export function parseGedcom(input: string | Uint8Array, options: ParseOptions = {}): ParsedDocument {
   const version = options.version ?? detectGedcomVersion(input);
 
+  let document: ParsedDocument;
+
   if (version === "7.0.18") {
-    return parseGedcom7(input);
+    document = parseGedcom7(input);
+  } else if (version === "5.5.1" || version === "5.5") {
+    document = parseGedcom551(input);
+  } else {
+    throw new ConversionError("Unable to detect GEDCOM version. Pass parseGedcom(..., { version }) explicitly.");
   }
 
-  if (version === "5.5.1" || version === "5.5") {
-    return parseGedcom551(input);
+  if (options.strict) {
+    const blocking = document.diagnostics.find((d) => d.severity === "warning" || d.severity === "error");
+    if (blocking) {
+      throw new ParseError(`Strict parse failed (${blocking.code}): ${blocking.message}`);
+    }
   }
 
-  throw new ConversionError("Unable to detect GEDCOM version. Pass parseGedcom(..., { version }) explicitly.");
+  return document;
 }
 
 /**

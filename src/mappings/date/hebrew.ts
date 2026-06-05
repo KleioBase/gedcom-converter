@@ -1,6 +1,6 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
 
-// GED-12 — Hebrew calendar ADR (Adar I) / ADS (Adar II) leap-year resolution.
+// Hebrew calendar ADR (Adar I) / ADS (Adar II) leap-year resolution.
 //
 // The Hebrew calendar inserts a leap month (Adar I) in 7 of every 19 years. In a
 // common (non-leap) year there is only one Adar, which the spec encodes as ADS

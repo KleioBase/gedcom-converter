@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseGedcom, parseGedcomZip, stringifyGedcomZip } from "../src/index.js";
 import type { Diagnostic } from "../src/types.js";
 
-// GED-18 — GEDZIP (.gdz) output serializer.
+// GEDZIP (.gdz) output serializer.
 
 const GED = [
   "0 HEAD",
@@ -20,7 +20,7 @@ const GED = [
 
 const IMAGE = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
 
-describe("GED-18: stringifyGedcomZip", () => {
+describe("stringifyGedcomZip", () => {
   it("round-trips a document and its media through the archive", async () => {
     const document = parseGedcom(GED, { version: "7.0.18" });
     const files = new Map([["media/photo.jpg", IMAGE]]);

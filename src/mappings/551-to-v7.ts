@@ -19,7 +19,17 @@ interface MappingContext {
   grandParentTag?: string;
 }
 
-const PRESERVED_HEADER_TAGS = new Set(["SOUR", "DEST", "DATE", "SUBM", "COPR", "FILE", "NOTE", "PLAC"]);
+const PRESERVED_HEADER_TAGS = new Set(["SOUR", "DEST", "DATE", "SUBM", "COPR", "FILE", "NOTE", "PLAC", "LANG"]);
+
+// GEDCOM 7 HEAD.LANG must be a BCP-47 tag, not a free-text language name. Map the
+// names the 5.5.1 side produces to their primary codes; the down-converter maps
+// the codes back via its own alias table, so the round-trip is preserved.
+const LANGUAGE_NAME_TO_CODE: Record<string, string> = {
+  german: "de",
+  english: "en",
+  french: "fr",
+  hebrew: "he"
+};
 
 const LEGACY_AGE_KEYWORDS = new Set(["CHILD", "INFANT", "STILLBORN"]);
 
@@ -100,6 +110,51 @@ function makeNode(base: {
     ...(base.value !== undefined ? { value: base.value } : {}),
     ...(base.xref !== undefined ? { xref: base.xref } : {})
   };
+}
+
+// GEDCOM 5.5 (and tools such as MyHeritage) place FORM and TITL as siblings of
+// FILE under OBJE. GEDCOM 7 requires them to be children of FILE (FORM as a MIME
+// type). Nest each orphan FORM/TITL under a FILE that lacks one so the normal
+// FILE-substructure mapping applies.
+function nestObjeFileDetails(children: GedcomNode[]): GedcomNode[] {
+  let result = children;
+
+  for (const detailTag of ["FORM", "TITL"]) {
+    const details = result.filter((child) => child.tag === detailTag);
+    const needyFiles = result.filter(
+      (child) => child.tag === "FILE" && !child.children.some((grandchild) => grandchild.tag === detailTag)
+    );
+
+    if (details.length === 0 || needyFiles.length === 0) {
+      continue;
+    }
+
+    const pairCount = Math.min(details.length, needyFiles.length);
+    const fileToDetail = new Map<GedcomNode, GedcomNode>();
+    const movedDetails = new Set<GedcomNode>();
+    for (let index = 0; index < pairCount; index += 1) {
+      fileToDetail.set(needyFiles[index]!, details[index]!);
+      movedDetails.add(details[index]!);
+    }
+
+    const next: GedcomNode[] = [];
+    for (const child of result) {
+      if (child.tag === detailTag && movedDetails.has(child)) {
+        continue;
+      }
+
+      const detail = fileToDetail.get(child);
+      if (detail) {
+        next.push({ ...child, children: [...child.children, cloneAtLevel(detail, child.level + 1)] });
+      } else {
+        next.push(child);
+      }
+    }
+
+    result = next;
+  }
+
+  return result;
 }
 
 function withOptionalLocation(node: GedcomNode): { line?: number; tag: string } {
@@ -352,9 +407,9 @@ function mapIdnoNode(node: GedcomNode, context: MappingContext, diagnostics: Dia
     ...(node.value !== undefined ? { value: node.value } : {}),
     children: [...mappedChildren, syntheticType]
   });
-  // Note: GED-6 only synthesizes TYPE for IDNO. INDI.EVEN / FAM.EVEN / FACT
+  // Note: only synthesizes TYPE for IDNO. INDI.EVEN / FAM.EVEN / FACT
   // also require TYPE in v7; those will be handled when a fixture surfaces
-  // the case in the round-trip corpus (GED-9).
+  // the case in the round-trip corpus.
 }
 
 function mapResnNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
@@ -528,10 +583,31 @@ function buildSchemaNode(
 }
 
 function mapHeader(document: ParsedDocument, diagnostics: Diagnostic[]): ParsedDocument["header"] {
+  let headFileDemoted = false;
   const preservedChildren = document.header.raw.children
-    .filter((child) => PRESERVED_HEADER_TAGS.has(child.tag))
-    .map((child) => cloneAtLevel(child, 1));
-  const schemaNode = buildSchemaNode(collectCustomTags(document), collectPreservedSchemaUris(document), diagnostics);
+    // Keep known header structures plus any `_`-prefixed extension (e.g. an
+    // exporter's metadata), so HEAD content is not silently dropped.
+    .filter((child) => PRESERVED_HEADER_TAGS.has(child.tag) || child.tag.startsWith("_"))
+    .map((child) => {
+      // HEAD.LANG: free-text name -> BCP-47 code (GEDCOM 7 requirement).
+      if (child.tag === "LANG" && child.value) {
+        const code = LANGUAGE_NAME_TO_CODE[child.value.trim().toLowerCase()];
+        if (code) {
+          return cloneAtLevel({ ...child, value: code }, 1);
+        }
+      }
+      // GEDCOM 7 has no HEAD.FILE; preserve the exporter's filename as a `_FILE`
+      // extension (declared in SCHMA) so it round-trips back to HEAD.FILE.
+      if (child.tag === "FILE") {
+        headFileDemoted = true;
+        return cloneAtLevel({ ...child, tag: "_FILE" }, 1);
+      }
+      return cloneAtLevel(child, 1);
+    });
+  const customTags = collectCustomTags(document);
+  const schemaTags =
+    headFileDemoted && !customTags.includes("_FILE") ? [...customTags, "_FILE"].sort() : customTags;
+  const schemaNode = buildSchemaNode(schemaTags, collectPreservedSchemaUris(document), diagnostics);
 
   return {
     ...document.header,
@@ -887,6 +963,82 @@ function promoteNoteRecordsToSnote(records: ParsedRecord[], diagnostics: Diagnos
   return { records: rewritten, promoted };
 }
 
+// Reserved xref prefix marking an OBJE record the converter synthesised from a
+// 5.5 embedded (inline) multimedia object. The down-converter recognises this
+// prefix to re-inline the media, so a 5.5.1 -> 7.0 -> 5.5.1 round-trip restores
+// the original embedded layout. Native records use any other xref and are left
+// as records.
+const PROMOTED_OBJE_XREF_PREFIX = "_KBOBJE";
+
+function isInlineMediaObject(node: GedcomNode): boolean {
+  return (
+    node.tag === "OBJE" &&
+    node.xref === undefined &&
+    (node.value === undefined || node.value === "") &&
+    node.children.some((child) => child.tag === "FILE" || child.tag === "_FILE")
+  );
+}
+
+// GEDCOM 7 has no embedded multimedia: every OBJE must be a record referenced by
+// a pointer. Promote each inline OBJE to a top-level record (1:1, no de-dup so the
+// transform is exactly reversible) and leave a pointer in its place.
+function promoteInlineObjeToRecords(records: ParsedRecord[], diagnostics: Diagnostic[]): ParsedRecord[] {
+  const usedXrefs = new Set<string>();
+  for (const record of records) {
+    if (record.xref) {
+      usedXrefs.add(record.xref);
+    }
+  }
+
+  let counter = 0;
+  const nextXref = (): string => {
+    let xref: string;
+    do {
+      counter += 1;
+      xref = `@${PROMOTED_OBJE_XREF_PREFIX}${counter}@`;
+    } while (usedXrefs.has(xref));
+    usedXrefs.add(xref);
+    return xref;
+  };
+
+  const promotedRecords: ParsedRecord[] = [];
+
+  const transformChildren = (children: GedcomNode[]): GedcomNode[] => {
+    const result: GedcomNode[] = [];
+    for (const child of children) {
+      const rewritten: GedcomNode = { ...child, children: transformChildren(child.children) };
+      if (isInlineMediaObject(rewritten)) {
+        const xref = nextXref();
+        promotedRecords.push({
+          tag: "OBJE",
+          xref,
+          children: rewritten.children.map((grandchild) => cloneAtLevel(grandchild, 1))
+        });
+        result.push({ level: child.level, tag: "OBJE", value: xref, children: [] });
+      } else {
+        result.push(rewritten);
+      }
+    }
+    return result;
+  };
+
+  const rewritten = records.map((record) => ({
+    ...record,
+    children: transformChildren(record.children)
+  }));
+
+  if (promotedRecords.length > 0) {
+    diagnostics.push({
+      severity: "info",
+      code: "INLINE_OBJE_PROMOTED",
+      message: `Promoted ${promotedRecords.length} embedded multimedia object(s) to GEDCOM 7 OBJE record(s).`,
+      location: { tag: "OBJE" }
+    });
+  }
+
+  return [...rewritten, ...promotedRecords];
+}
+
 function rewriteInlineNotePointers(node: GedcomNode, promoted: Set<string>): GedcomNode {
   const rewrittenChildren = node.children.map((child) => rewriteInlineNotePointers(child, promoted));
 
@@ -987,6 +1139,18 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
     return mapGedcom551DateNodeToV7(node, diagnostics);
   }
 
+  if (node.tag === "OBJE") {
+    return makeNode({
+      level: node.level,
+      tag: "OBJE",
+      children: nestObjeFileDetails(node.children).map((child) =>
+        mapNode(child, extendMappingContext(context, "OBJE"), diagnostics)
+      ),
+      ...(node.value !== undefined ? { value: node.value } : {}),
+      ...(node.xref !== undefined ? { xref: node.xref } : {})
+    });
+  }
+
   return makeNode({
     level: node.level,
     tag: node.tag,
@@ -1007,9 +1171,11 @@ function mapRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecor
     return null;
   }
 
+  const recordChildren = record.tag === "OBJE" ? nestObjeFileDetails(record.children) : record.children;
+
   return {
     tag: record.tag,
-    children: record.children.map((child) => mapNode(child, {}, diagnostics)),
+    children: recordChildren.map((child) => mapNode(child, {}, diagnostics)),
     ...(record.xref !== undefined ? { xref: record.xref } : {}),
     ...(record.value !== undefined ? { value: record.value } : {})
   };
@@ -1034,14 +1200,18 @@ export function mapGedcom551DocumentToV7(document: ParsedDocument): ParsedDocume
     .map((record) => mapRecord(record, diagnostics))
     .filter((record): record is ParsedRecord => record !== null);
 
+  // GEDCOM 7 requires multimedia to be records referenced by pointers; lift any
+  // 5.5 embedded OBJE out to a top-level record before building the schema.
+  const promotedRecords = promoteInlineObjeToRecords(mappedRecords, diagnostics);
+
   // SCHMA must declare every custom tag in the *mapped* document, not the source,
   // because the mapper itself may introduce new extensions (e.g. _RESN fallback).
-  const header = mapHeader({ ...document, records: mappedRecords }, diagnostics);
+  const header = mapHeader({ ...document, records: promotedRecords }, diagnostics);
 
   return {
     version: "7.0.18",
     header,
-    records: mappedRecords,
+    records: promotedRecords,
     extensions: document.extensions.map(cloneNode),
     diagnostics
   };

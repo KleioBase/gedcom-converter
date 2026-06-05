@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convertGedcom, parseGedcom } from "../src/index.js";
 
-// GED-11 — full date round-trip across phrases, ranges, periods, dual dates,
+// full date round-trip across phrases, ranges, periods, dual dates,
 // mixed-calendar ranges and partial dates, in both conversion directions.
 //
 // Tolerance: the only lossy date construct is the v7 PHRASE substructure. A v7
@@ -57,7 +57,7 @@ function dateLines(output: string): string {
     .join("\n");
 }
 
-describe("GED-11: date ranges (BET/AND, AFT, BEF)", () => {
+describe("date ranges (BET/AND, AFT, BEF)", () => {
   const cases = ["BET 1900 AND 1910", "BET 1900 AND JAN 1910", "AFT 1850", "BEF 1850"];
   for (const value of cases) {
     it(`round-trips "${value}" unchanged`, () => {
@@ -67,7 +67,7 @@ describe("GED-11: date ranges (BET/AND, AFT, BEF)", () => {
   }
 });
 
-describe("GED-11: date approximations (ABT, CAL, EST)", () => {
+describe("date approximations (ABT, CAL, EST)", () => {
   for (const value of ["ABT 1850", "CAL 1850", "EST 1850"]) {
     it(`round-trips "${value}" unchanged`, () => {
       expect(up(value).lines).toBe(`2 DATE ${value}`);
@@ -76,7 +76,7 @@ describe("GED-11: date approximations (ABT, CAL, EST)", () => {
   }
 });
 
-describe("GED-11: date periods (FROM/TO, open-ended)", () => {
+describe("date periods (FROM/TO, open-ended)", () => {
   for (const value of ["FROM 1900 TO 1910", "FROM 1900", "TO 1910"]) {
     it(`round-trips "${value}" unchanged`, () => {
       expect(up(value).lines).toBe(`2 DATE ${value}`);
@@ -85,7 +85,7 @@ describe("GED-11: date periods (FROM/TO, open-ended)", () => {
   }
 });
 
-describe("GED-11: partial dates", () => {
+describe("partial dates", () => {
   for (const value of ["1900", "MAR 1900", "15 MAR 1900"]) {
     it(`round-trips "${value}" unchanged`, () => {
       expect(up(value).lines).toBe(`2 DATE ${value}`);
@@ -94,7 +94,7 @@ describe("GED-11: partial dates", () => {
   }
 });
 
-describe("GED-11: date phrases (§2.4 — phrases moved to PHRASE in v7)", () => {
+describe("date phrases (§2.4 — phrases moved to PHRASE in v7)", () => {
   it("up: interpreted INT date → DATE payload + PHRASE", () => {
     expect(up("INT 1900 (about then)").lines).toBe("2 DATE 1900\n3 PHRASE about then");
   });
@@ -117,7 +117,7 @@ describe("GED-11: date phrases (§2.4 — phrases moved to PHRASE in v7)", () =>
   });
 });
 
-describe("GED-11: dual dates (§6.2 Old Style / New Style)", () => {
+describe("dual dates (§6.2 Old Style / New Style)", () => {
   for (const value of ["30 JAN 1648/49", "@#DJULIAN@ 30 JAN 1648/49"]) {
     it(`round-trips "${value}"`, () => {
       // The dual `year/suffix` survives unchanged; only the calendar escape ↔ keyword flips.
@@ -127,7 +127,7 @@ describe("GED-11: dual dates (§6.2 Old Style / New Style)", () => {
   }
 });
 
-describe("GED-11: mixed-calendar ranges (§6.3)", () => {
+describe("mixed-calendar ranges (§6.3)", () => {
   it("up: each date in the range keeps its own calendar", () => {
     expect(up("FROM @#DGREGORIAN@ 1670 TO @#DJULIAN@ 1700").lines).toBe(
       "2 DATE FROM GREGORIAN 1670 TO JULIAN 1700"
@@ -141,7 +141,7 @@ describe("GED-11: mixed-calendar ranges (§6.3)", () => {
   });
 });
 
-describe("GED-11: BCE / B.C. era markers", () => {
+describe("BCE / B.C. era markers", () => {
   it("up: 5.5.1 B.C. → v7 BCE (Julian)", () => {
     expect(up("@#DJULIAN@ 44 B.C.").lines).toBe("2 DATE JULIAN 44 BCE");
   });

@@ -3,7 +3,9 @@ import { stringifyGedcomTree } from "../utils/lines.js";
 import { GEDCOM551_CHARSET, GEDCOM551_FORM, GEDCOM551_VERSION } from "./schema.js";
 
 const DEFAULT_SUBMITTER_XREF = "@SUBM1@";
-const DEFAULT_PRODUCT_VERSION = "0.1.0";
+// Converter's own version, stamped into the generated 5.5.1 `HEAD.SOUR.VERS`.
+// Keep in sync with `package.json` "version" on each release (see docs/release-process.md).
+const DEFAULT_PRODUCT_VERSION = "0.2.0";
 const LANGUAGE_ALIASES: Record<string, string> = {
   de: "German",
   deu: "German",
@@ -42,7 +44,9 @@ function normalizeLanguage(value: string | undefined): string | undefined {
   }
 
   const baseLanguage = normalized.split(/[-_]/)[0];
-  return baseLanguage ? LANGUAGE_ALIASES[baseLanguage] ?? baseLanguage : value;
+  // Map a known code (e.g. `he` -> `Hebrew`); otherwise keep the original value
+  // verbatim rather than lower-casing it.
+  return baseLanguage && LANGUAGE_ALIASES[baseLanguage] ? LANGUAGE_ALIASES[baseLanguage] : value;
 }
 
 function appendMetadataLine(value: string | undefined, label: string, metadata: string): string {
@@ -181,6 +185,13 @@ function buildHeadSourceNode(document: ParsedDocument): { node: GedcomNode; head
       continue;
     }
 
+    // Preserve vendor extension subtrees (e.g. Ancestry's `_TREE`/`RIN`/`_ENV`)
+    // verbatim, including their nested children, rather than discarding them.
+    if (child.tag.startsWith("_")) {
+      children.push(cloneAtLevel(child, 2));
+      continue;
+    }
+
     if (child.tag !== "DATA") {
       continue;
     }
@@ -267,7 +278,7 @@ function buildHeaderDescriptionNode(document: ParsedDocument, extraLines: string
   };
 }
 
-// GED-20 — GEDCOM 5.5.1 has no SCHMA, so a v7 SCHMA is preserved as a `_SCHMA`
+// GEDCOM 5.5.1 has no SCHMA, so a v7 SCHMA is preserved as a `_SCHMA`
 // HEAD block whose `_TAG` children keep the original `<tag> <URI>` payloads. This
 // lets a v7 → 5.5.1 → v7 round-trip recover the documented extension URIs.
 function buildSchemaPreservationNode(document: ParsedDocument): GedcomNode | null {
@@ -297,7 +308,9 @@ function buildHead(document: ParsedDocument): GedcomNode {
   const rawHeaderDest = document.header.raw.children.find((child) => child.tag === "DEST");
   const rawHeaderDate = document.header.raw.children.find((child) => child.tag === "DATE");
   const rawHeaderSubn = document.header.raw.children.find((child) => child.tag === "SUBN");
-  const rawHeaderFile = document.header.raw.children.find((child) => child.tag === "FILE");
+  // GEDCOM 7 carries the exporter filename as a `_FILE` extension (the up-converter
+  // demotes HEAD.FILE, which is not valid under a v7 HEAD); restore it to FILE.
+  const rawHeaderFile = document.header.raw.children.find((child) => child.tag === "FILE" || child.tag === "_FILE");
   const rawHeaderCopr = document.header.raw.children.find((child) => child.tag === "COPR");
   const { node: headSourceNode, headerNoteLines } = buildHeadSourceNode(document);
   const normalizedHeaderTime = normalizeGedcom551TimeValue(
@@ -413,7 +426,13 @@ function buildHead(document: ParsedDocument): GedcomNode {
         : []),
       ...(headPlaceNode ? [headPlaceNode] : []),
       ...(headerDescriptionNode ? [headerDescriptionNode] : []),
-      ...(schemaPreservationNode ? [schemaPreservationNode] : [])
+      ...(schemaPreservationNode ? [schemaPreservationNode] : []),
+      // Preserve any HEAD-level extension (e.g. an exporter's metadata) instead
+      // of dropping it. `_SCHMA` is handled separately above, and `_FILE` is
+      // restored to HEAD.FILE above (so it must not be re-emitted here).
+      ...document.header.raw.children
+        .filter((child) => child.tag.startsWith("_") && child.tag !== "_SCHMA" && child.tag !== "_FILE")
+        .map((child) => cloneAtLevel(child, 1))
     ]
   };
 }

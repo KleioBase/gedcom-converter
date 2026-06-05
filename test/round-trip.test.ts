@@ -50,7 +50,7 @@ const FIXTURES_70: FixtureSpec[] = [
   {
     path: "official/gedcom70/age.ged",
     version: "7.0.18",
-    allowedDiagnostics: ["AGE_PHRASE_NOTED"]
+    allowedDiagnostics: ["AGE_PHRASE_FALLBACK", "AGE_PHRASE_NOTED"]
   },
   {
     path: "official/gedcom70/escapes.ged",
@@ -134,7 +134,7 @@ const FIXTURES_70: FixtureSpec[] = [
       "TEXT_LANGUAGE_NOTED",
       "TRAN_LANGUAGE_INLINED",
       "UIDS_MERGED",
-      "UID_NOTED",
+      "UID_PROMOTED",
       "VALUE_NOTED",
       "VOID_POINTER_NOTED"
     ]
@@ -149,8 +149,8 @@ const FIXTURES_70: FixtureSpec[] = [
     version: "7.0.18",
     allowedDiagnostics: [
       "FILE_FORMAT_NOTED",
-      "FILE_REFERENCE_DEGRADED",
       "FILE_REFERENCE_NOTED",
+      "FORM_TO_MIME_CONVERTED",
       "VOID_POINTER_NOTED"
     ]
   },

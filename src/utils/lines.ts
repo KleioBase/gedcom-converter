@@ -15,7 +15,11 @@ interface ParsedLine {
   lineNumber: number;
 }
 
-const LINE_PATTERN = /^(\d+)\s+(?:(@[^@\s]+@)\s+)?([A-Z0-9_]+)(?:\s+(.*))?$/;
+// The tag/value separator is a single space (per the GEDCOM line grammar); any
+// further whitespace belongs to the value. Using a greedy `\s+` here would strip
+// significant leading spaces from line values, so only one delimiter space is
+// consumed before the value capture.
+const LINE_PATTERN = /^(\d+)\s+(?:(@[^@\s]+@)\s+)?([A-Z0-9_]+)(?: (.*))?$/;
 const GEDCOM551_LINE_LIMIT = 255;
 
 type ContinuationMode = "gedcom7" | "gedcom551";
@@ -29,11 +33,11 @@ export function splitGedcomLines(input: string): string[] {
   return input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((line) => line.length > 0);
 }
 
-function parseLine(line: string, lineNumber: number): ParsedLine {
+function parseLine(line: string, lineNumber: number): ParsedLine | null {
   const match = line.match(LINE_PATTERN);
 
   if (!match) {
-    throw new ParseError(`Invalid GEDCOM line at ${lineNumber}: ${line}`);
+    return null;
   }
 
   const [, levelText, possibleXref, tag, possibleValue] = match;
@@ -55,6 +59,32 @@ export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnosti
   for (const [index, rawLine] of splitGedcomLines(input).entries()) {
     const lineNumber = index + 1;
     const parsed = parseLine(rawLine, lineNumber);
+
+    if (!parsed) {
+      // A physical line with no level number: a value containing an unescaped
+      // embedded newline (seen in some real-world exports). Recover by folding
+      // it into the most recent node's value as a continuation, and flag it so
+      // a strict caller can choose to treat it as fatal.
+      const current = stack[stack.length - 1];
+      if (current) {
+        current.value = current.value === undefined ? rawLine : `${current.value}\n${rawLine}`;
+        diagnostics.push({
+          severity: "warning",
+          code: "MALFORMED_LINE_RECOVERED",
+          message: `Line ${lineNumber} has no level number; folded into the preceding ${current.tag} value as a continuation.`,
+          location: { line: lineNumber, tag: current.tag }
+        });
+      } else {
+        diagnostics.push({
+          severity: "error",
+          code: "MALFORMED_LINE_DROPPED",
+          message: `Line ${lineNumber} has no level number and no preceding structure; dropped.`,
+          location: { line: lineNumber }
+        });
+      }
+      continue;
+    }
+
     const node: GedcomNode = {
       level: parsed.level,
       tag: parsed.tag,
@@ -135,6 +165,15 @@ export function normalizeContinuationPayloads(nodes: GedcomNode[], mode: Continu
 }
 
 function encodeLineString(value: string, mode: ContinuationMode): string {
+  // A leading @ is doubled (@@) so a reader doesn't mistake the payload for a
+  // pointer — EXCEPT when the @ is structural and not a literal character:
+  //  - a pointer payload such as `@I1@` (whole value is `@xref@`), and
+  //  - a 5.5.1 escape sequence such as `@#DJULIAN@ …` (introduced by `@#`),
+  //    which GEDCOM 7 does not use.
+  if (mode === "gedcom551" && value.startsWith("@#")) {
+    return value;
+  }
+
   if (value.startsWith("@") && !/^@[^@\s]+@$/.test(value)) {
     return `@${value}`;
   }
@@ -207,7 +246,8 @@ function emitGedcom551Node(lines: string[], node: GedcomNode): void {
   const basePrefixLength = formatLine(node.level, node.tag, undefined, node.xref).length;
   const firstSegments =
     payloadLines.length > 0 ? splitGedcom551Segment(payloadLines[0]!, basePrefixLength) : [];
-  const firstValue = firstSegments.length > 0 ? firstSegments[0]! : undefined;
+  const firstValue =
+    firstSegments.length > 0 ? encodeLineString(firstSegments[0]!, "gedcom551") : undefined;
 
   lines.push(formatLine(node.level, node.tag, firstValue, node.xref));
 

@@ -19,7 +19,7 @@ function run(args: string[], stdin?: string) {
 const MIN_7 = readFixture("minimal-7.0.18.ged");
 const MIN_551 = readFixture("minimal-5.5.1.ged");
 
-describe("GED-21: gedcom-convert CLI", () => {
+describe("gedcom-convert CLI", () => {
   it("detect prints the version", () => {
     const result = run(["detect", "-"], MIN_7);
     expect(result.code).toBe(EXIT.SUCCESS);

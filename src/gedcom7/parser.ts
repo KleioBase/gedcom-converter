@@ -6,8 +6,14 @@ import { GEDCOM7_VERSION } from "./schema.js";
 import { normalizeGedcom7Node } from "./normalization.js";
 
 const BANNED_GEDCOM7_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0080-\u009F\uD800-\uDFFF\uFFFE\uFFFF]/u;
+// Spec §1.3: the cross-reference-identifier (Xref) is `@1*tagchar@` but explicitly
+// "not @VOID@" — @VOID@ is only valid as a pointer *payload* (the value alternation
+// below still allows it). The `(?!VOID@)` lookahead rejects @VOID@ in the xref slot.
 const GEDCOM7_LINE_PATTERN =
-  /^(?:0|[1-9]\d*) (?:(?:@[A-Z0-9_]+@) )?(?:[A-Z][A-Z0-9_]*|_[A-Z0-9_]+)(?: (?:@VOID@|@[A-Z0-9_]+@|@@[^\r\n]*|[^\r\n@][^\r\n]*))?$/u;
+  /^(?:0|[1-9]\d*) (?:(?:@(?!VOID@)[A-Z0-9_]+@) )?(?:[A-Z][A-Z0-9_]*|_[A-Z0-9_]+)(?: (?:@VOID@|@[A-Z0-9_]+@|@@[^\r\n]*|[^\r\n@][^\r\n]*))?$/u;
+// Spec §1.3: CONC is reserved and does not appear as a structure tag in GEDCOM 7
+// (continuation uses CONT only). Reject it rather than admit a stray child node.
+const GEDCOM7_CONC_LINE = /^(?:0|[1-9]\d*) (?:@[A-Z0-9_]+@ )?CONC(?: |$)/u;
 
 function toParsedRecord(node: ParsedRecord & { xref?: string; value?: string }): ParsedRecord {
   return {
@@ -43,6 +49,10 @@ function validateGedcom7LineSyntax(text: string): void {
 
     if (BANNED_GEDCOM7_CHARACTERS.test(line)) {
       throw new ParseError(`Invalid GEDCOM 7 character at line ${lineNumber}.`);
+    }
+
+    if (GEDCOM7_CONC_LINE.test(line)) {
+      throw new ParseError(`CONC is reserved and invalid in GEDCOM 7 (use CONT) at line ${lineNumber}: ${line}`);
     }
 
     if (!GEDCOM7_LINE_PATTERN.test(line)) {

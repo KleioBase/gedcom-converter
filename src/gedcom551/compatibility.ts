@@ -65,6 +65,9 @@ const ALWAYS_PHRASE_TAGS = new Set(["PHRASE"]);
 const NOTE_LIKE_PARENT_TAGS = new Set(["NOTE", "TEXT"]);
 const VALID_RESN_VALUES = new Set(["CONFIDENTIAL", "LOCKED", "PRIVACY"]);
 const INVALID_STAT_VALUES = new Set(["DNS_CAN", "INFANT", "PRE_1970"]);
+// Real-world 5.5.1 files use formats beyond the spec's small enum (bmp/gif/jpg/
+// ole/pcx/tif/wav). Accept every format the up-converter's FORM_TO_MIME knows
+// about so multimedia round-trips instead of collapsing the FILE to a note.
 const FILE_FORM_ALIASES: Record<string, string> = {
   bmp: "bmp",
   gif: "gif",
@@ -72,7 +75,11 @@ const FILE_FORM_ALIASES: Record<string, string> = {
   jpg: "jpg",
   tif: "tif",
   tiff: "tif",
-  wav: "wav"
+  wav: "wav",
+  mp3: "mp3",
+  mp4: "mp4",
+  pdf: "pdf",
+  txt: "txt"
 };
 const SOURCE_MEDIA_TYPE_ALIASES: Record<string, string> = {
   audio: "AUDIO",
@@ -185,6 +192,14 @@ function hasTypeChild(node: GedcomNode): boolean {
   return node.children.some((child) => child.tag === "TYPE");
 }
 
+function cloneAtLevel(node: GedcomNode, level: number): GedcomNode {
+  return {
+    ...node,
+    level,
+    children: node.children.map((child) => cloneAtLevel(child, level + 1))
+  };
+}
+
 function removeChildByTagAndValue(node: GedcomNode, tag: string, value: string | undefined): GedcomNode {
   let removed = false;
 
@@ -206,29 +221,27 @@ function addValueAsTypeOrExtension(node: GedcomNode): GedcomNode {
     return node;
   }
 
-  const children = [...node.children];
-
-  if (!hasTypeChild(node)) {
-    children.unshift({
-      level: node.level + 1,
-      tag: "TYPE",
-      value: node.value,
-      children: []
-    });
-  } else {
-    children.unshift({
-      level: node.level + 1,
-      tag: "_VALUE",
-      value: node.value,
-      children: []
-    });
+  // When there is already a TYPE, keep the value on the line verbatim. GEDCOM
+  // 5.5.1 tolerates the payload, and preserving it avoids both data loss and any
+  // guess about whether the structure is "really" a FACT. Only when there is no
+  // TYPE is the value moved into the canonical 5.5.1 TYPE slot.
+  if (hasTypeChild(node)) {
+    return node;
   }
 
   const { value: _value, ...nodeWithoutValue } = node;
 
   return {
     ...nodeWithoutValue,
-    children
+    children: [
+      {
+        level: node.level + 1,
+        tag: "TYPE",
+        value: node.value,
+        children: []
+      },
+      ...node.children
+    ]
   };
 }
 
@@ -819,8 +832,12 @@ function rewriteSlgcAsNote(node: GedcomNode, diagnostics: Diagnostic[]): GedcomN
   return makeNoteNode(node.level, lines.join("\n"));
 }
 
-function rewriteObjectNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+function rewriteObjectNode(node: GedcomNode, diagnostics: Diagnostic[], isInline = false): GedcomNode {
   const hoistedNotes: GedcomNode[] = [];
+  // For an inline (embedded) OBJE, 5.5.1 expects TITL as a direct child of OBJE,
+  // not under FILE (that layout is the MULTIMEDIA_RECORD form). Collect any TITL
+  // found under FILE and re-attach it at the OBJE level.
+  const hoistedTitles: GedcomNode[] = [];
   const rewrittenChildren = node.children.map((child) => {
     if (child.tag === "TITL" || child.tag === "_TITL") {
       if (child.value) {
@@ -881,7 +898,9 @@ function rewriteObjectNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomN
       rewrittenChild = removeTranslationChildren(rewrittenChild);
     }
 
-    const titleChildren = rewrittenChild.children.filter((grandchild) => (grandchild.tag === "TITL" || grandchild.tag === "_TITL") && grandchild.value);
+    // A standard TITL under FILE is native GEDCOM 5.5.1 and is kept. Only a
+    // demoted `_TITL` extension is hoisted to an OBJE note.
+    const titleChildren = rewrittenChild.children.filter((grandchild) => grandchild.tag === "_TITL" && grandchild.value);
     for (const titleChild of titleChildren) {
       pushInfo(
         diagnostics,
@@ -895,8 +914,23 @@ function rewriteObjectNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomN
     if (titleChildren.length > 0) {
       rewrittenChild = {
         ...rewrittenChild,
-        children: rewrittenChild.children.filter((grandchild) => grandchild.tag !== "TITL" && grandchild.tag !== "_TITL")
+        children: rewrittenChild.children.filter((grandchild) => grandchild.tag !== "_TITL")
       };
+    }
+
+    // Inline OBJE: lift a standard TITL out of FILE so it sits directly under
+    // OBJE (the 5.5.1 embedded-multimedia layout). Records keep TITL under FILE.
+    if (isInline) {
+      const fileTitles = rewrittenChild.children.filter((grandchild) => grandchild.tag === "TITL");
+      if (fileTitles.length > 0) {
+        for (const fileTitle of fileTitles) {
+          hoistedTitles.push(cloneAtLevel(fileTitle, node.level + 1));
+        }
+        rewrittenChild = {
+          ...rewrittenChild,
+          children: rewrittenChild.children.filter((grandchild) => grandchild.tag !== "TITL")
+        };
+      }
     }
 
     const cropChildren = rewrittenChild.children.filter((grandchild) => grandchild.tag === "CROP" || grandchild.tag === "_CROP");
@@ -952,10 +986,14 @@ function rewriteObjectNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomN
     return rewrittenChild;
   });
 
-  return hoistedNotes.length > 0
+  return hoistedNotes.length > 0 || hoistedTitles.length > 0
     ? {
         ...node,
-        children: [...rewrittenChildren.filter((child): child is GedcomNode => child !== null), ...hoistedNotes]
+        children: [
+          ...rewrittenChildren.filter((child): child is GedcomNode => child !== null),
+          ...hoistedTitles,
+          ...hoistedNotes
+        ]
       }
     : node;
 }
@@ -1153,29 +1191,12 @@ function mergeUidChildren(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNo
   };
 }
 
-function rewriteUidChildrenAsNotes(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
-  const uidChildren = node.children.filter((child) => child.tag === "_UID" && child.value);
-
-  if (uidChildren.length === 0) {
-    return node;
-  }
-
-  for (const uidChild of uidChildren) {
-    pushInfo(
-      diagnostics,
-      "UID_NOTED",
-      `Preserved UID ${uidChild.value} as note text for GEDCOM 5.5.1 compatibility.`,
-      uidChild
-    );
-  }
-
-  return {
-    ...node,
-    children: [
-      ...node.children.filter((child) => child.tag !== "_UID"),
-      ...uidChildren.map((uidChild) => makeNoteNode(uidChild.level, prependLabeledValue("UID", uidChild.value!)))
-    ]
-  };
+function preserveUidChildren(node: GedcomNode): GedcomNode {
+  // `_UID` is the de-facto GEDCOM 5.5.1 convention for a record's unique
+  // identifier (used by MyHeritage, Gramps, and others, and the form a v7 `UID`
+  // is demoted to). Keep it as an extension tag so it round-trips, rather than
+  // flattening it into note prose. No transformation is required.
+  return node;
 }
 
 function flattenChildNotesIntoRecord(record: ParsedRecord, diagnostics: Diagnostic[]): ParsedRecord {
@@ -1374,6 +1395,15 @@ function sanitizeNode(
         const phraseChild = findPhraseChild(child);
 
         if (phraseChild?.value) {
+          // GEDCOM 5.5.1 AGE_AT_EVENT is free-form. When the v7 AGE has no
+          // structured value (e.g. a bare number or a range that v7 could only
+          // hold as a PHRASE), restore the phrase as the AGE value rather than
+          // demoting it to a note. Only when the AGE also carries a structured
+          // value is the supplementary phrase hoisted to a note.
+          if (!child.value) {
+            return { ...removePhraseChildren(child), value: phraseChild.value };
+          }
+
           pushInfo(
             diagnostics,
             "AGE_PHRASE_NOTED",
@@ -1388,12 +1418,12 @@ function sanitizeNode(
       return child;
     });
 
-    if (hoistedNotes.length > 0) {
-      nextNode = {
-        ...nextNode,
-        children: [...rewrittenChildren, ...hoistedNotes]
-      };
-    }
+    // Apply the rewritten children whenever they changed (e.g. an AGE PHRASE
+    // restored to the AGE value), not only when a note was hoisted.
+    nextNode = {
+      ...nextNode,
+      children: [...rewrittenChildren, ...hoistedNotes]
+    };
   }
 
   if (nextNode.tag === "SOUR" && context.rootTag !== "SOUR") {
@@ -1556,7 +1586,9 @@ function sanitizeNode(
   }
 
   if (nextNode.tag === "OBJE") {
-    nextNode = rewriteObjectNode(nextNode, diagnostics);
+    // This path only handles inline (embedded) OBJE; multimedia *records* are
+    // rewritten in sanitizeRecord. Inline objects carry no xref.
+    nextNode = rewriteObjectNode(nextNode, diagnostics, nextNode.xref === undefined);
   }
 
   if (ALWAYS_PHRASE_TAGS.has(nextNode.tag)) {
@@ -1620,6 +1652,13 @@ function sanitizeNode(
     };
   }
 
+  // Did this EVEN carry a value on the line *before* normalization? A value that
+  // gets parked into a TYPE child below can be restored to the 5.5.1 descriptor
+  // slot, but an EVEN that only ever had a TYPE child (the canonical 5.5.1
+  // generic family event, e.g. `1 EVEN` / `2 TYPE Marriage`) must keep that
+  // structure intact for a faithful round-trip.
+  const evenHadOriginalValue = nextNode.tag === "EVEN" && Boolean(nextNode.value);
+
   if (nextNode.tag === "EVEN" && nextNode.value && context.rootTag !== "SOUR" && context.parentTag !== "SOUR") {
     nextNode = addValueAsTypeOrExtension(nextNode);
   }
@@ -1629,7 +1668,9 @@ function sanitizeNode(
       context.parentTag === "DATA"
         ? ["TYPE", "_VALUE"]
         : context.rootTag === "FAM"
-          ? ["_VALUE", "TYPE"]
+          ? evenHadOriginalValue
+            ? ["_VALUE", "TYPE"]
+            : ["_VALUE"]
           : [];
     const valueChild = valueChildTags
       .map((tag) => nextNode.children.find((child) => child.tag === tag && child.value))
@@ -1909,16 +1950,12 @@ function sanitizeNode(
   }
 
   if (nextNode.tag === "FILE") {
-    if ((nextNode.value?.length ?? 0) > 30) {
-      pushWarning(
-        diagnostics,
-        "FILE_REFERENCE_DEGRADED",
-        "Demoted FILE to _FILE because the multimedia reference exceeds GEDCOM 5.5.1 length limits.",
-        nextNode
-      );
-      return demoteTag(nextNode, "_FILE");
-    }
-
+    // GEDCOM 5.5.1 multimedia FILE references are routinely long paths or URLs.
+    // The spec's nominal 30-character limit is universally ignored by real
+    // exporters (including the files this converter reads), and the serializer
+    // wraps over-length values with CONC. Keep the FILE reference structured
+    // rather than degrading it to a note. A FILE still needs a FORM to be valid
+    // 5.5.1; without one, demote it to the _FILE extension.
     if (!nextNode.children.some((child) => child.tag === "FORM")) {
       return demoteTag(nextNode, "_FILE");
     }
@@ -1940,14 +1977,16 @@ function sanitizeNode(
   if (nextNode.tag === "TYPE" && context.parentTag === "FORM" && nextNode.value) {
     const normalizedMediaType = SOURCE_MEDIA_TYPE_ALIASES[nextNode.value.toLowerCase()];
 
-    if (!normalizedMediaType) {
-      return demoteTag(nextNode);
+    // A known source-media-type maps to its canonical 5.5.1 enumeration value.
+    // Any other value is kept verbatim under TYPE — FORM.TYPE is a standard
+    // 5.5.1 substructure, so preserving the source value beats demoting it to
+    // an extension tag (which would silently lose round-trip fidelity).
+    if (normalizedMediaType) {
+      nextNode = {
+        ...nextNode,
+        value: normalizedMediaType
+      };
     }
-
-    nextNode = {
-      ...nextNode,
-      value: normalizedMediaType
-    };
   }
 
   if (
@@ -2065,12 +2104,14 @@ function sanitizeNode(
     return makeNoteNode(nextNode.level, prependLabeledValue("Restriction", nextNode.value ?? ""));
   }
 
-  if (nextNode.tag === "TITL" && ["FILE", "OBJE"].includes(context.parentTag ?? "")) {
+  // TITL under FILE is native GEDCOM 5.5.1 (a descriptive title); keep it. Only a
+  // TITL directly under OBJE (the older sibling layout) is non-standard 5.5.1.
+  if (nextNode.tag === "TITL" && context.parentTag === "OBJE") {
     return demoteTag(nextNode);
   }
 
   nextNode = mergeUidChildren(nextNode, diagnostics);
-  nextNode = rewriteUidChildrenAsNotes(nextNode, diagnostics);
+  nextNode = preserveUidChildren(nextNode);
   nextNode = hoistObjectLinkNotes(nextNode, diagnostics);
   nextNode = rewriteValueChildrenAsNotes(nextNode, diagnostics);
   nextNode = hoistPointerPhraseNotes(nextNode, diagnostics);
@@ -2208,22 +2249,19 @@ function sanitizeRecord(record: ParsedRecord, existingXrefs: Set<string>, diagno
     diagnostics
   );
 
-  const uidNotedRecord = rewriteUidChildrenAsNotes(
-    {
-      level: 0,
-      tag: nextRecord.tag,
-      children: nextRecord.children,
-      ...(nextRecord.xref !== undefined ? { xref: nextRecord.xref } : {}),
-      ...(nextRecord.value !== undefined ? { value: nextRecord.value } : {})
-    },
-    diagnostics
-  );
+  const uidPreservedRecord = preserveUidChildren({
+    level: 0,
+    tag: nextRecord.tag,
+    children: nextRecord.children,
+    ...(nextRecord.xref !== undefined ? { xref: nextRecord.xref } : {}),
+    ...(nextRecord.value !== undefined ? { value: nextRecord.value } : {})
+  });
 
   nextRecord = {
-    tag: uidNotedRecord.tag,
-    children: uidNotedRecord.children,
-    ...(uidNotedRecord.xref !== undefined ? { xref: uidNotedRecord.xref } : {}),
-    ...(uidNotedRecord.value !== undefined ? { value: uidNotedRecord.value } : {})
+    tag: uidPreservedRecord.tag,
+    children: uidPreservedRecord.children,
+    ...(uidPreservedRecord.xref !== undefined ? { xref: uidPreservedRecord.xref } : {}),
+    ...(uidPreservedRecord.value !== undefined ? { value: uidPreservedRecord.value } : {})
   };
 
   const objectLinkHoistedRecord = hoistObjectLinkNotes(
