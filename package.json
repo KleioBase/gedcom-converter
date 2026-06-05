@@ -1,6 +1,6 @@
 {
   "name": "@kleiobase/gedcom-converter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Convert GEDCOM files between versions, starting with FamilySearch GEDCOM 7.0.18 to GEDCOM 5.5.1.",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,7 @@
   "files": [
     "dist",
     "bin",
+    "docs",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -42,12 +43,17 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test",
     "convert:file": "npm run build && node scripts/convert-ged-file.mjs"
   },
   "devDependencies": {

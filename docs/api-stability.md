@@ -9,11 +9,12 @@ Regenerate with `npm run build` and inspect `dist/index.d.ts` + `dist/**/*.d.ts`
 
 ## Stability levels
 
-- **stable** — covered by SemVer. A breaking change bumps MAJOR (see
+- **stable**: covered by SemVer. A breaking change bumps MAJOR (see
   [`release-process.md`](./release-process.md)).
-- **experimental** — may change in a MINOR release; marked `@experimental` in TSDoc.
-- **internal** — not exported from the package root (parsers, serializers, the ZIP
-  codec, the CLI runner). Reachable only via deep paths and **not** part of the contract.
+- **experimental**: may change in a MINOR release. Marked `@experimental` in TSDoc.
+- **internal**: not exported from the package root (parsers, serializers, the ZIP
+  codec, the CLI runner). Reachable only through deep import paths and not part of
+  the public contract.
 
 ## Functions
 
@@ -32,7 +33,7 @@ Regenerate with `npm run build` and inspect `dist/index.d.ts` + `dist/**/*.d.ts`
 | Type | Stability | Notes |
 | --- | --- | --- |
 | `SupportedVersion`, `ParseableVersion`, `DetectedVersion` | stable | Version string unions. |
-| `DiagnosticSeverity`, `Diagnostic`, `DiagnosticLocation` | stable | `Diagnostic.code` strings are part of the contract — see the [fidelity matrix](./fidelity-matrix.md). |
+| `DiagnosticSeverity`, `Diagnostic`, `DiagnosticLocation` | stable | `Diagnostic.code` strings are part of the contract; see the [fidelity matrix](./fidelity-matrix.md). |
 | `GedcomNode`, `ParsedHeader`, `ParsedRecord`, `ParsedDocument` | stable | The document model. |
 | `ConversionResult`, `ConversionStats` | stable | |
 | `ParseOptions`, `StringifyOptions`, `GedcomLineEnding` | stable | |
@@ -75,7 +76,7 @@ interface ParsedRecord { tag: string; xref?: string; value?: string; children: G
 interface ParsedDocument { version: ParseableVersion; header: ParsedHeader; records: ParsedRecord[]; extensions: GedcomNode[]; diagnostics: Diagnostic[]; }
 interface ConversionStats { recordsProcessed: number; unsupportedStructures: number; preservedExtensions: number; }
 interface ConversionResult { version: SupportedVersion; output: string; diagnostics: Diagnostic[]; stats: ConversionStats; }
-interface ParseOptions { version?: ParseableVersion; }
+interface ParseOptions { version?: ParseableVersion; strict?: boolean; }
 interface StringifyOptions { version: SupportedVersion; lineEnding?: GedcomLineEnding; }
 interface ConvertOptions { from: ParseableVersion; to: SupportedVersion; strict?: boolean; preserveUnknown?: boolean; preserveHeaderMeta?: boolean; }
 interface ParsedGedzip { document: ParsedDocument; files: Map<string, Uint8Array>; diagnostics: Diagnostic[]; }

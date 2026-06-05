@@ -1,7 +1,7 @@
 # Examples
 
-Short, runnable recipes for `@kleiobase/gedcom-converter`. Each is a single file
-you can run with [`tsx`](https://github.com/privatenumber/tsx):
+Runnable recipes for `@kleiobase/gedcom-converter`. Each recipe is a single file.
+Run one with [`tsx`](https://github.com/privatenumber/tsx):
 
 ```bash
 npx tsx examples/<name>.ts

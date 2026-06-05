@@ -2,43 +2,28 @@
 
 [![CI](https://github.com/KleioBase/gedcom-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/KleioBase/gedcom-converter/actions/workflows/ci.yml)
 
-`@kleiobase/gedcom-converter` is a TypeScript library for reading and converting GEDCOM files.
+A TypeScript library for reading, writing, and converting GEDCOM files. It
+supports GEDCOM 7.0.18, 5.5.1, and legacy 5.5, and converts between them.
 
-It is built for applications that need to work with real genealogy data across GEDCOM versions without silently emitting broken output.
+Conversion favours valid output. When a structure has no equivalent in the
+target version, the converter preserves it as extension data or records a
+diagnostic rather than discarding it without notice.
 
-## What it does
+## Features
 
-- detects GEDCOM versions from text or bytes
-- decodes input byte streams from ANSEL (the pre-7.0 default), UTF-16, or UTF-8 based on the BOM and `1 CHAR`
-- parses GEDCOM into a structured document model
-- stringifies parsed documents back into GEDCOM text
-- converts supported versions into other supported versions
-- preserves unsupported data as diagnostics or `_TAG` fallbacks when needed
+- Version detection from text or bytes.
+- Byte-stream decoding for ANSEL (the pre-7.0 default), UTF-16, and UTF-8,
+  selected from the byte-order mark and the `1 CHAR` declaration.
+- Parsing into a structured document model.
+- Serialization back to GEDCOM text.
+- Conversion between supported versions.
+- Preservation of unsupported structures as diagnostics or `_TAG` extensions.
 
-Typical use cases:
+## Supported versions
 
-- genealogy apps
-- import and migration pipelines
-- archival tooling
-- interoperability utilities
-- automated GEDCOM validation workflows
-
-## Current support
-
-- parse: `7.0.18`, `5.5.1`, legacy `5.5`
-- stringify: `7.0.18`, `5.5.1`
-- convert:
-  - `7.0.18 -> 5.5.1`
-  - `5.5.1 -> 7.0.18`
-  - `5.5 -> 5.5.1`
-  - `5.5 -> 7.0.18`
-
-## Why use it
-
-- TypeScript-first API with exported document and diagnostic types
-- version-aware parsing, mapping, and serialization
-- compatibility-focused conversion that favors valid GEDCOM over unsafe guesses
-- preservation of unsupported structures instead of silent data loss
+- Parse: `7.0.18`, `5.5.1`, `5.5`.
+- Serialize: `7.0.18`, `5.5.1`.
+- Convert: `7.0.18 -> 5.5.1`, `5.5.1 -> 7.0.18`, `5.5 -> 5.5.1`, `5.5 -> 7.0.18`.
 
 ## Install
 
@@ -80,54 +65,52 @@ console.log(result.diagnostics);
 
 ## Examples
 
-Runnable recipes live in [`examples/`](./examples/README.md) — parsing, building a
-document, converting with diagnostics, severity reports, and GEDZIP bundling. Run
-any with `npx tsx examples/<name>.ts`.
+The [`examples/`](https://github.com/KleioBase/gedcom-converter/tree/main/examples)
+directory contains runnable recipes: parsing, building a document, converting
+with diagnostics, reporting by severity, and bundling GEDZIP archives. Clone the
+repository and run a recipe with `npx tsx examples/<name>.ts`.
 
 ## API
 
 ### `detectGedcomVersion(input)`
 
-Returns one of:
+Returns `"7.0.18"`, `"5.5.1"`, `"5.5"`, or `"unknown"`.
 
-- `"7.0.18"`
-- `"5.5.1"`
-- `"5.5"`
-- `"unknown"`
+### `parseGedcom(input, { version?, strict? })`
 
-### `parseGedcom(input, { version? })`
-
-Parses GEDCOM text into a `ParsedDocument`.
+Parses GEDCOM text or bytes into a `ParsedDocument`. The version is detected
+automatically unless `version` is supplied. Parsing is lenient: a malformed line,
+such as a value with an unescaped embedded newline, is recovered and reported as a
+`warning` diagnostic rather than throwing. Pass `strict: true` to throw instead.
 
 ### `stringifyGedcom(document, { version })`
 
-Serializes a parsed document into GEDCOM text for the requested version.
+Serializes a `ParsedDocument` to GEDCOM text for the requested version.
 
 ### `parseGedcomZip(input)`
 
-Parses a FamilySearch GEDZIP (`.gdz`) archive. Returns a `Promise<ParsedGedzip>`
-with the parsed `document`, a `files` map of bundled media (keyed by archive path),
-and `diagnostics`. Encrypted archives reject with a clear error; `META-INF` entries
-are ignored with a diagnostic. Use `looksLikeZip(input)` to detect GEDZIP bytes.
+Parses a FamilySearch GEDZIP (`.gdz`) archive and returns a
+`Promise<ParsedGedzip>` with the parsed `document`, a `files` map of bundled
+media keyed by archive path, and `diagnostics`. Encrypted archives reject with an
+error. `META-INF` entries are ignored and recorded as a diagnostic. Use
+`looksLikeZip(input)` to test whether a buffer is GEDZIP.
 
 ### `stringifyGedcomZip(document, files, { version, lineEnding?, diagnostics? })`
 
-Serializes a document and its bundled media into a GEDZIP (`.gdz`) archive
-(`Promise<Uint8Array>`). The dataset is written as `gedcom.ged` (deflated);
-already-compressed media is stored. Pass a `diagnostics` array to collect a
-`GEDZIP_FILE_MISSING` warning for any referenced local file you didn't provide.
+Serializes a document and its bundled media to a GEDZIP (`.gdz`) archive and
+returns a `Promise<Uint8Array>`. The dataset is written as `gedcom.ged`
+(deflated); already-compressed media is stored without further compression.
+Supply a `diagnostics` array to collect a `GEDZIP_FILE_MISSING` warning for any
+referenced local file that is absent from `files`.
 
 ### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
 
-Converts a GEDCOM file and returns:
-
-- `output`
-- `diagnostics`
-- `stats`
+Converts a GEDCOM file and returns an object with `output`, `diagnostics`, and
+`stats`.
 
 ## CLI
 
-The package ships a `gedcom-convert` binary:
+The package installs a `gedcom-convert` binary:
 
 ```bash
 gedcom-convert detect <file>
@@ -138,10 +121,11 @@ gedcom-convert validate <file> [--against <v>]
 gedcom-convert roundtrip <file> [--version <v>]
 ```
 
-A `<file>` of `-` reads from standard input; without `-o`, output goes to standard
-output, so commands pipe cleanly. Exit codes: `0` success, `1` error, `2`
-strict-mode warning, `64` usage error. Diagnostics print to stderr (coloured on a
-TTY; honours `NO_COLOR`). Run with `--help` for usage.
+A `<file>` of `-` reads from standard input. Without `-o`, output is written to
+standard output, so commands can be piped. Exit codes are `0` for success, `1`
+for an error, `2` for a strict-mode warning, and `64` for a usage error.
+Diagnostics are written to standard error, coloured on a TTY and suppressed when
+`NO_COLOR` is set. Run any command with `--help` for usage.
 
 ```bash
 npx @kleiobase/gedcom-converter convert input.ged --to 5.5.1 -o output.ged
@@ -149,66 +133,64 @@ npx @kleiobase/gedcom-converter convert input.ged --to 5.5.1 -o output.ged
 
 ## Conversion model
 
-The converter is intentionally conservative.
+When a structure maps cleanly onto the target version, it is written as a
+standard tag. When it does not, the converter takes one of three actions:
 
-When a structure maps cleanly into the target version, it is converted to a standard tag.
+- preserves the data as a `_TAG` extension,
+- normalizes it to the closest valid form in the target version, or
+- emits a diagnostic that records the change.
 
-When it does not, the converter prefers to:
-
-- preserve the information as `_TAG` data
-- normalize it into the closest valid target form
-- emit diagnostics so the caller can review what changed
-
-That means the package prioritizes:
-
-1. valid output
-2. data preservation
-3. explicit diagnostics
-
-over aggressive or lossy rewriting.
+The order of preference is valid output first, then preservation of data, then
+an explicit diagnostic. The converter does not rewrite data in ways that produce
+invalid output or discard information without a diagnostic.
 
 ## Diagnostics
 
-Diagnostics are part of normal conversion output. They are useful for:
+Conversion returns a list of diagnostics alongside the output. They report:
 
-- unsupported identifiers
-- degraded date phrases
-- dropped broken pointer references
-- preserved extension data
-- compatibility-driven demotions to `_TAG`
+- unsupported identifiers,
+- degraded date phrases,
+- dropped broken pointer references,
+- preserved extension data,
+- demotions to `_TAG` required for compatibility.
 
-If you want warnings to fail conversion, use `strict: true`.
+Set `strict: true` to treat warnings as failures.
 
-For a per-tag breakdown of what every conversion direction does — `clean`, `lossy: …`, `_TAG`, `dropped`, or `N/A` — and the diagnostic code each lossy path emits, see [`docs/fidelity-matrix.md`](./docs/fidelity-matrix.md).
+For the outcome of every tag in every direction (`clean`, `lossy: …`, `_TAG`,
+`dropped`, or `N/A`) and the diagnostic code emitted on each lossy path, see
+[`docs/fidelity-matrix.md`](./docs/fidelity-matrix.md).
 
-## Local repository helper
+## Repository helper
 
-This repository includes a helper script for converting a real file into a gitignored temp folder:
+The repository includes a script that converts a file into a gitignored
+temporary folder:
 
 ```bash
 npm run convert:file -- fixtures/official/gedcom70/maximal70.ged
 ```
 
-That writes to:
+The output is written to:
 
 ```text
 .tmp/generated/<input-name>.5.5.1.ged
 ```
 
-This helper is for repository development and manual validation.
+The script is intended for development and manual validation within the
+repository.
 
-## Validation status
+## Validation
 
-The current `7.0.18 -> 5.5.1` path is validated with automated tests, focused fixtures, official GEDCOM sample files, and external validation tools.
+The `7.0.18 -> 5.5.1` path is covered by automated tests, targeted fixtures, the
+official GEDCOM sample files, and external validation tools. The 5.5.1 output
+generated from the official `maximal70.ged` sample validates in GED-inline.
 
-Generated 5.5.1 output from the official `maximal70.ged` sample has been validated successfully in GED-inline.
-
-Validation does not mean all conversions are lossless. Some GEDCOM 7 constructs still need to be preserved as `_TAG` data when GEDCOM 5.5.1 has no clean equivalent.
+Validation does not imply lossless conversion. Some GEDCOM 7 structures are
+preserved as `_TAG` data because GEDCOM 5.5.1 has no equivalent.
 
 ## Character encodings and line endings
 
-Input byte streams (`Uint8Array`) are decoded automatically based on the byte-order
-mark and the `1 CHAR` declaration:
+Byte-stream input (`Uint8Array`) is decoded from the byte-order mark and the
+`1 CHAR` declaration:
 
 | Declared / detected | Decoded as |
 | --- | --- |
@@ -216,29 +198,31 @@ mark and the `1 CHAR` declaration:
 | UTF-16 BOM (`FF FE` / `FE FF`), or `1 CHAR UNICODE` | UTF-16 LE / BE |
 | `1 CHAR ANSEL` (the pre-7.0 default) | ANSEL, including combining diacritics (reordered + NFC-composed) |
 
-GEDCOM 7 output is always UTF-8 (spec mandate); 5.5.1 output is UTF-8 with a
-`1 CHAR UTF-8` header. Passing a `string` skips decoding (only the BOM is stripped).
+GEDCOM 7 output is always UTF-8, as required by the specification. GEDCOM 5.5.1
+output is UTF-8 with a `1 CHAR UTF-8` header. String input is not decoded; only
+the byte-order mark is stripped.
 
-CR, LF, and CRLF line endings are all parsed, and the parser produces identical
-records regardless of the input style. The serializer emits LF by default; pass
-`lineEnding` to choose:
+CR, LF, and CRLF line endings are all accepted, and the parser produces the same
+records regardless of input style. The serializer emits LF by default. Set
+`lineEnding` to override it:
 
 ```ts
 stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 ```
 
-## Limits
+## Limitations
 
-- textual `.ged` files only
-- GEDZIP `.gdz` reading and writing are supported (`parseGedcomZip` / `stringifyGedcomZip`)
-- no full semantic GEDCOM schema validator yet
-- some structures are intentionally preserved as `_TAG` instead of being aggressively rewritten
+- Textual `.ged` input and output only.
+- GEDZIP (`.gdz`) reading and writing through `parseGedcomZip` and
+  `stringifyGedcomZip`.
+- No full semantic GEDCOM schema validator.
+- Some structures are preserved as `_TAG` rather than rewritten.
 
 ## Releases
 
-- Version history: [`CHANGELOG.md`](./CHANGELOG.md)
-- Public API surface and stability: [`docs/api-stability.md`](./docs/api-stability.md)
-- Versioning and publishing policy: [`docs/release-process.md`](./docs/release-process.md)
+- Version history: [`CHANGELOG.md`](./CHANGELOG.md).
+- Public API surface and stability: [`docs/api-stability.md`](./docs/api-stability.md).
+- Versioning and publishing policy: [`docs/release-process.md`](./docs/release-process.md).
 
 ## References
 
