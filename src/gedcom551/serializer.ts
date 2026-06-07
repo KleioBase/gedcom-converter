@@ -5,7 +5,7 @@ import { GEDCOM551_CHARSET, GEDCOM551_FORM, GEDCOM551_VERSION } from "./schema.j
 const DEFAULT_SUBMITTER_XREF = "@SUBM1@";
 // Converter's own version, stamped into the generated 5.5.1 `HEAD.SOUR.VERS`.
 // Keep in sync with `package.json` "version" on each release (see docs/release-process.md).
-const DEFAULT_PRODUCT_VERSION = "0.2.0";
+const DEFAULT_PRODUCT_VERSION = "0.2.1";
 const LANGUAGE_ALIASES: Record<string, string> = {
   de: "German",
   deu: "German",
