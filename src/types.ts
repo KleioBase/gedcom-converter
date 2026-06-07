@@ -58,6 +58,22 @@ export interface ParsedRecord {
   children: GedcomNode[];
 }
 
+/**
+ * A lazy, single-pass stream of a GEDCOM document's top-level records. HEAD is
+ * parsed eagerly into {@link GedcomRecordStream.header} and TRLR is consumed but
+ * never yielded; every other top-level record is built on demand, one per
+ * iterator step, so peak memory stays at roughly the input plus a single record
+ * subtree rather than the whole document tree. See {@link ParsedRecord}.
+ */
+export interface GedcomRecordStream extends Iterable<ParsedRecord> {
+  /** Parsed HEAD (convenience fields plus the raw node), available before iteration. */
+  readonly header: ParsedHeader;
+  /** The version the yielded records conform to (detected or forced). */
+  readonly version: ParseableVersion;
+  /** Diagnostics observed so far; fully populated once the iterator is exhausted. */
+  readonly diagnostics: Diagnostic[];
+}
+
 /** A fully parsed GEDCOM document. */
 export interface ParsedDocument {
   version: ParseableVersion;

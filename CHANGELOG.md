@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [0.2.1] - 2026-06-07
+
+### Added
+
+- `streamGedcomRecords(input, options?)`: a lazy, single-pass reader that yields a
+  GEDCOM 7 document's top-level records one subtree at a time without
+  materialising the whole node tree, keeping peak memory at roughly the input
+  plus a single record. `HEAD` is parsed eagerly into `stream.header` and `TRLR`
+  is consumed but never yielded; extension records are included in the stream. A
+  new `GedcomRecordStream` type and a `stream.ts` example accompany it.
+
 ## [0.2.0] - 2026-06-05
 
 First public release on npm. (The 0.1.0-alpha milestone below was an internal
@@ -82,5 +93,6 @@ old `Schema tag:` HEAD note should read the `_SCHMA` block instead. The
 - Official GEDCOM 5.x and 7.0 regression fixtures and tests.
 - GitHub Actions CI (typecheck, test, build).
 
+[0.2.1]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.2.0
 

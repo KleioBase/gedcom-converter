@@ -15,7 +15,7 @@ const GEDCOM7_LINE_PATTERN =
 // (continuation uses CONT only). Reject it rather than admit a stray child node.
 const GEDCOM7_CONC_LINE = /^(?:0|[1-9]\d*) (?:@[A-Z0-9_]+@ )?CONC(?: |$)/u;
 
-function toParsedRecord(node: ParsedRecord & { xref?: string; value?: string }): ParsedRecord {
+export function toParsedRecord(node: ParsedRecord & { xref?: string; value?: string }): ParsedRecord {
   return {
     tag: node.tag,
     children: node.children,
@@ -29,6 +29,22 @@ function extractHeaderVersion(headerChildren: ParsedHeader["raw"]["children"]): 
   return gedc?.children.find((child) => child.tag === "VERS")?.value;
 }
 
+/**
+ * Build the convenience {@link ParsedHeader} view of a normalized HEAD node.
+ * Shared by {@link parseGedcom7} and the record streamer so both expose the
+ * same header fields.
+ */
+export function buildGedcom7Header(headerNode: ParsedHeader["raw"]): ParsedHeader {
+  const sourceSystem = headerNode.children.find((child) => child.tag === "SOUR")?.value;
+
+  return {
+    gedcomVersion: extractHeaderVersion(headerNode.children) ?? GEDCOM7_VERSION,
+    characterSet: headerNode.children.find((child) => child.tag === "CHAR")?.value ?? "UTF-8",
+    raw: headerNode,
+    ...(sourceSystem !== undefined ? { sourceSystem } : {})
+  };
+}
+
 function splitPhysicalLines(text: string): string[] {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 
@@ -39,25 +55,32 @@ function splitPhysicalLines(text: string): string[] {
   return lines;
 }
 
+/**
+ * Validate a single physical line against the GEDCOM 7 container grammar,
+ * throwing {@link ParseError} on any violation. Shared by the eager parser and
+ * the record streamer so both reject the same malformed lines.
+ */
+export function validateGedcom7Line(line: string, lineNumber: number): void {
+  if (line.length === 0) {
+    throw new ParseError(`Invalid blank GEDCOM 7 line at ${lineNumber}.`);
+  }
+
+  if (BANNED_GEDCOM7_CHARACTERS.test(line)) {
+    throw new ParseError(`Invalid GEDCOM 7 character at line ${lineNumber}.`);
+  }
+
+  if (GEDCOM7_CONC_LINE.test(line)) {
+    throw new ParseError(`CONC is reserved and invalid in GEDCOM 7 (use CONT) at line ${lineNumber}: ${line}`);
+  }
+
+  if (!GEDCOM7_LINE_PATTERN.test(line)) {
+    throw new ParseError(`Invalid GEDCOM 7 line at ${lineNumber}: ${line}`);
+  }
+}
+
 function validateGedcom7LineSyntax(text: string): void {
   for (const [index, line] of splitPhysicalLines(text).entries()) {
-    const lineNumber = index + 1;
-
-    if (line.length === 0) {
-      throw new ParseError(`Invalid blank GEDCOM 7 line at ${lineNumber}.`);
-    }
-
-    if (BANNED_GEDCOM7_CHARACTERS.test(line)) {
-      throw new ParseError(`Invalid GEDCOM 7 character at line ${lineNumber}.`);
-    }
-
-    if (GEDCOM7_CONC_LINE.test(line)) {
-      throw new ParseError(`CONC is reserved and invalid in GEDCOM 7 (use CONT) at line ${lineNumber}: ${line}`);
-    }
-
-    if (!GEDCOM7_LINE_PATTERN.test(line)) {
-      throw new ParseError(`Invalid GEDCOM 7 line at ${lineNumber}: ${line}`);
-    }
+    validateGedcom7Line(line, index + 1);
   }
 }
 
@@ -101,17 +124,11 @@ export function parseGedcom7(input: string | Uint8Array): ParsedDocument {
 
   const rawRecords = normalizedRoots.filter((node) => node.tag !== "HEAD" && node.tag !== "TRLR");
   const extensions = rawRecords.filter((node) => node.tag.startsWith("_"));
-  const sourceSystem = headerNode.children.find((child) => child.tag === "SOUR")?.value;
   const records: ParsedRecord[] = rawRecords
     .filter((node) => !node.tag.startsWith("_"))
     .map((node) => toParsedRecord(node));
 
-  const header: ParsedHeader = {
-    gedcomVersion: extractHeaderVersion(headerNode.children) ?? GEDCOM7_VERSION,
-    characterSet: headerNode.children.find((child) => child.tag === "CHAR")?.value ?? "UTF-8",
-    raw: headerNode,
-    ...(sourceSystem !== undefined ? { sourceSystem } : {})
-  };
+  const header = buildGedcom7Header(headerNode);
 
   return {
     version: GEDCOM7_VERSION,

@@ -33,7 +33,13 @@ export function splitGedcomLines(input: string): string[] {
   return input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((line) => line.length > 0);
 }
 
-function parseLine(line: string, lineNumber: number): ParsedLine | null {
+/** A physical GEDCOM line paired with its 1-based source line number. */
+export interface NumberedLine {
+  raw: string;
+  lineNumber: number;
+}
+
+export function parseLine(line: string, lineNumber: number): ParsedLine | null {
   const match = line.match(LINE_PATTERN);
 
   if (!match) {
@@ -51,13 +57,25 @@ function parseLine(line: string, lineNumber: number): ParsedLine | null {
   };
 }
 
-export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnostics: Diagnostic[] } {
-  const diagnostics: Diagnostic[] = [];
-  const roots: GedcomNode[] = [];
+/**
+ * Assemble top-level GEDCOM records one at a time from a stream of numbered
+ * lines, yielding each level-0 record subtree as soon as the next level-0 line
+ * (or end of input) proves it complete. Diagnostics are pushed into the shared
+ * `diagnostics` array as lines are consumed, so a record's diagnostics are
+ * present before that record is yielded.
+ *
+ * This is the shared core behind both {@link parseGedcomTree} (which collects
+ * every root) and the record streamer (which yields and discards one root at a
+ * time, keeping peak memory at roughly the input plus a single record subtree).
+ */
+export function* streamGedcomRoots(
+  lines: Iterable<NumberedLine>,
+  diagnostics: Diagnostic[]
+): Generator<GedcomNode> {
+  let current: GedcomNode | undefined;
   const stack: GedcomNode[] = [];
 
-  for (const [index, rawLine] of splitGedcomLines(input).entries()) {
-    const lineNumber = index + 1;
+  for (const { raw: rawLine, lineNumber } of lines) {
     const parsed = parseLine(rawLine, lineNumber);
 
     if (!parsed) {
@@ -65,14 +83,14 @@ export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnosti
       // embedded newline (seen in some real-world exports). Recover by folding
       // it into the most recent node's value as a continuation, and flag it so
       // a strict caller can choose to treat it as fatal.
-      const current = stack[stack.length - 1];
-      if (current) {
-        current.value = current.value === undefined ? rawLine : `${current.value}\n${rawLine}`;
+      const node = stack[stack.length - 1];
+      if (node) {
+        node.value = node.value === undefined ? rawLine : `${node.value}\n${rawLine}`;
         diagnostics.push({
           severity: "warning",
           code: "MALFORMED_LINE_RECOVERED",
-          message: `Line ${lineNumber} has no level number; folded into the preceding ${current.tag} value as a continuation.`,
-          location: { line: lineNumber, tag: current.tag }
+          message: `Line ${lineNumber} has no level number; folded into the preceding ${node.tag} value as a continuation.`,
+          location: { line: lineNumber, tag: node.tag }
         });
       } else {
         diagnostics.push({
@@ -99,7 +117,10 @@ export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnosti
     }
 
     if (node.level === 0) {
-      roots.push(node);
+      if (current) {
+        yield current;
+      }
+      current = node;
       stack.length = 0;
       stack.push(node);
       continue;
@@ -123,6 +144,18 @@ export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnosti
     parent.children.push(node);
     stack.push(node);
   }
+
+  if (current) {
+    yield current;
+  }
+}
+
+export function parseGedcomTree(input: string): { roots: GedcomNode[]; diagnostics: Diagnostic[] } {
+  const diagnostics: Diagnostic[] = [];
+  const numberedLines = splitGedcomLines(input).map(
+    (raw, index): NumberedLine => ({ raw, lineNumber: index + 1 })
+  );
+  const roots = [...streamGedcomRoots(numberedLines, diagnostics)];
 
   return { roots, diagnostics };
 }

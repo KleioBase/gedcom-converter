@@ -10,6 +10,7 @@ npx tsx examples/<name>.ts
 | Recipe | What it shows |
 | --- | --- |
 | [`parse.ts`](./parse.ts) | Read a `.ged` file, detect its version, walk records, log diagnostics. |
+| [`stream.ts`](./stream.ts) | Stream a GEDCOM 7 file's top-level records one at a time without holding the whole tree in memory. |
 | [`stringify.ts`](./stringify.ts) | Build a `ParsedDocument` programmatically and serialize it (with a `lineEnding` option). |
 | [`convert.ts`](./convert.ts) | Convert 7.0 → 5.5.1, inspect stats/diagnostics, and decide whether `strict` mode would reject it. |
 | [`diagnostics.ts`](./diagnostics.ts) | Group conversion diagnostics by severity and render a per-code report. |

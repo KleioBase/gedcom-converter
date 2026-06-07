@@ -11,13 +11,31 @@ diagnostic rather than discarding it without notice.
 
 ## Features
 
-- Version detection from text or bytes.
-- Byte-stream decoding for ANSEL (the pre-7.0 default), UTF-16, and UTF-8,
-  selected from the byte-order mark and the `1 CHAR` declaration.
-- Parsing into a structured document model.
-- Serialization back to GEDCOM text.
-- Conversion between supported versions.
-- Preservation of unsupported structures as diagnostics or `_TAG` extensions.
+- **Version detection** from text or bytes (`detectGedcomVersion`).
+- **Byte-stream decoding** for ANSEL (the pre-7.0 default), UTF-16 LE/BE, ASCII,
+  and UTF-8, selected from the byte-order mark and the `1 CHAR` declaration.
+- **Parsing** into a structured document model (`parseGedcom`), lenient by
+  default with recoverable issues reported as diagnostics, or `strict` to throw.
+- **Streaming** a document's top-level records one at a time
+  (`streamGedcomRecords`) so large files never materialise the whole node tree.
+- **Serialization** back to GEDCOM text (`stringifyGedcom`), with a selectable
+  line ending.
+- **Conversion** between supported versions (`convertGedcom`), favouring valid
+  output, then data preservation, then an explicit diagnostic.
+- **GEDZIP** (`.gdz`) reading and writing (`parseGedcomZip`,
+  `stringifyGedcomZip`, `looksLikeZip`).
+- **Rich conversion coverage**: personal names, individual/family events and
+  attributes, LDS ordinances, sources/citations/repositories, associations,
+  notes and shared notes, multimedia (with `FORM` → MIME mapping), and a
+  centralised enumeration layer with bidirectional `OTHER` + `PHRASE`
+  round-tripping.
+- **Date handling**: phrases, ranges, periods, partial and dual dates, the
+  Gregorian, Julian, Hebrew, and French Republican calendars, and legacy epoch
+  markers.
+- **Preservation** of unsupported structures as diagnostics or `_TAG`
+  extensions, so conversion never silently discards data.
+- **CLI** (`gedcom-convert`) covering detect, parse, stringify, convert,
+  validate, and round-trip.
 
 ## Supported versions
 
@@ -66,22 +84,95 @@ console.log(result.diagnostics);
 ## Examples
 
 The [`examples/`](https://github.com/KleioBase/gedcom-converter/tree/main/examples)
-directory contains runnable recipes: parsing, building a document, converting
-with diagnostics, reporting by severity, and bundling GEDZIP archives. Clone the
-repository and run a recipe with `npx tsx examples/<name>.ts`.
+directory contains runnable recipes: parsing, streaming records, building a
+document, converting with diagnostics, reporting by severity, and bundling
+GEDZIP archives. Clone the repository and run a recipe with
+`npx tsx examples/<name>.ts`.
 
 ## API
 
+Everything importable from the package root is the public surface; deep imports
+are internal and unsupported. The full reviewed list, with per-export stability
+levels and the TypeScript declaration rollup, is in
+[`docs/api-stability.md`](./docs/api-stability.md).
+
+### Document model
+
+Parsing produces a `ParsedDocument`:
+
+```ts
+interface ParsedDocument {
+  version: ParseableVersion;          // "5.5" | "5.5.1" | "7.0.18"
+  header: ParsedHeader;               // convenience fields + raw HEAD node
+  records: ParsedRecord[];            // top-level records, excluding extensions
+  extensions: GedcomNode[];           // top-level "_"-prefixed records
+  diagnostics: Diagnostic[];          // parse observations
+}
+```
+
+A `ParsedRecord` is a top-level record (`INDI`, `FAM`, `SOUR`, …) with a `tag`,
+optional `xref` and `value`, and a tree of `children` (`GedcomNode`s).
+`CONT`/`CONC` continuations are folded into the parent's `value`, so a multi-line
+note is one `value` containing `\n`. Every `Diagnostic` carries a stable,
+machine-readable `code` (part of the public contract; see the
+[fidelity matrix](./docs/fidelity-matrix.md)), a `severity`
+(`"info" | "warning" | "error"`), a `message`, and a best-effort `location`.
+
 ### `detectGedcomVersion(input)`
 
-Returns `"7.0.18"`, `"5.5.1"`, `"5.5"`, or `"unknown"`.
+Returns `"7.0.18"`, `"5.5.1"`, `"5.5"`, or `"unknown"`. Accepts a string or
+`Uint8Array` (decoded by BOM + `1 CHAR`).
 
 ### `parseGedcom(input, { version?, strict? })`
 
 Parses GEDCOM text or bytes into a `ParsedDocument`. The version is detected
 automatically unless `version` is supplied. Parsing is lenient: a malformed line,
 such as a value with an unescaped embedded newline, is recovered and reported as a
-`warning` diagnostic rather than throwing. Pass `strict: true` to throw instead.
+`warning` diagnostic rather than throwing. Pass `strict: true` to throw on the
+first `warning`/`error` diagnostic instead. Throws if the version cannot be
+detected and none is supplied.
+
+### `streamGedcomRecords(input, { version?, strict? })`
+
+Lazily streams a **GEDCOM 7** document's top-level records without holding the
+whole node tree in memory, returning a `GedcomRecordStream`. `HEAD` is parsed
+eagerly and exposed as `stream.header`; `TRLR` is consumed and never yielded.
+Each record subtree is built on demand — exactly one per iterator step — and
+becomes garbage-collectable as soon as the consumer advances, so peak heap is
+roughly the input plus a single record's subtree rather than the entire tree.
+This is the tool to reach for when ingesting large files (for example, inserting
+each record into a database).
+
+```ts
+interface GedcomRecordStream extends Iterable<ParsedRecord> {
+  readonly header: ParsedHeader;       // available before iteration
+  readonly version: ParseableVersion;  // always "7.0.18"
+  readonly diagnostics: Diagnostic[];  // populated as records are produced
+}
+```
+
+```ts
+import { streamGedcomRecords } from "@kleiobase/gedcom-converter";
+
+const stream = streamGedcomRecords(gedcom7Text);
+console.log(`Source: ${stream.header.sourceSystem}`);
+
+for (const record of stream) {
+  await insert(record);              // record is GC-eligible after this step
+}
+
+console.log(`${stream.diagnostics.length} diagnostic(s)`); // fully populated now
+```
+
+The stream is **synchronous, lazy, and single-pass**. Every top-level record
+between `HEAD` and `TRLR` is yielded, *including* `_`-prefixed extension records
+(which `parseGedcom` instead segregates into `document.extensions`). The input
+must be GEDCOM 7: detect the version first and, for 5.5/5.5.1 sources, convert to
+7 with `convertGedcom(..., { to: "7.0.18" })` and stream the converted string.
+Because parsing is lazy, a malformed line or shape violation (missing/duplicate
+`HEAD` or `TRLR`) past the header throws mid-iteration rather than up front.
+Throws immediately if the version cannot be detected and none is supplied, or if
+the input is GEDCOM 5.5/5.5.1.
 
 ### `stringifyGedcom(document, { version })`
 
@@ -105,8 +196,13 @@ referenced local file that is absent from `files`.
 
 ### `convertGedcom(input, { from, to, strict?, preserveUnknown?, preserveHeaderMeta? })`
 
-Converts a GEDCOM file and returns an object with `output`, `diagnostics`, and
-`stats`.
+Converts a GEDCOM file from `from` to `to` and returns a `ConversionResult` with
+the serialized `output` string, the `diagnostics` recorded along the way, and
+`stats` (`recordsProcessed`, `unsupportedStructures`, `preservedExtensions`).
+Pass `strict: true` to throw on any `warning` diagnostic. `preserveUnknown` and
+`preserveHeaderMeta` are reserved (`@experimental`, no effect yet). Supported
+directions are `7.0.18 → 5.5.1`, `5.5.1 → 7.0.18`, `5.5 → 5.5.1`, and
+`5.5 → 7.0.18`.
 
 ## CLI
 
@@ -217,6 +313,10 @@ stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
   `stringifyGedcomZip`.
 - No full semantic GEDCOM schema validator.
 - Some structures are preserved as `_TAG` rather than rewritten.
+- `streamGedcomRecords` accepts GEDCOM 7 only; convert 5.5/5.5.1 input to 7
+  first. It takes a fully decoded string or byte buffer (not yet a
+  `ReadableStream`), so the raw input still resides in memory; the saving is the
+  document tree, which is the dominant cost.
 
 ## Releases
 
