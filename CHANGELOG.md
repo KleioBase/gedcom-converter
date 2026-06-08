@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [Unreleased]
+
+### Fixed
+
+- `stringifyGedcomZip` no longer throws `RangeError: Maximum call stack size
+  exceeded` when an archive entry is large (e.g. a multi-MB embedded image). The
+  ZIP writer previously spread entry bytes into `Array.prototype.push`, passing
+  millions of arguments for a single entry; it now accumulates whole byte chunks
+  and concatenates once into a preallocated buffer.
+
 ## [0.2.1] - 2026-06-07
 
 ### Added
