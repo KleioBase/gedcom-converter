@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
-## [Unreleased]
+## [0.3.0] - 2026-08-13
+
+Three of the fixes below change the bytes this library emits. All move output
+toward the specification, and none require a code change to adopt, but a consumer
+that byte-compares output or pins on the old behaviour will see a difference:
+
+- every GEDCOM 7 stream now starts with a U+FEFF byte-order mark;
+- `stringifyGedcom` targeting a version other than the document's own now maps
+  the document instead of passing record bodies through unchanged;
+- `detectGedcomVersion` can now return a different version for files whose
+  `HEAD.SOUR.VERS` previously masked `HEAD.GEDC.VERS`.
 
 ### Fixed
 
@@ -139,6 +149,7 @@ old `Schema tag:` HEAD note should read the `_SCHMA` block instead. The
 - Official GEDCOM 5.x and 7.0 regression fixtures and tests.
 - GitHub Actions CI (typecheck, test, build).
 
+[0.3.0]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.3.0
 [0.2.2]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.2.2
 [0.2.1]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KleioBase/gedcom-converter/releases/tag/v0.2.0
