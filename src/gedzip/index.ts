@@ -60,7 +60,10 @@ export async function parseGedcomZip(input: Uint8Array): Promise<ParsedGedzip> {
 }
 
 export interface StringifyGedcomZipOptions extends StringifyOptions {
-  /** Optional sink that collects warnings (e.g. a referenced local file with no bytes). */
+  /**
+   * Optional sink that collects warnings: a referenced local file with no bytes,
+   * plus any cross-version mapping warnings from {@link StringifyOptions}.
+   */
   diagnostics?: Diagnostic[];
 }
 

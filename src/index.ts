@@ -1,3 +1,4 @@
+import { retargetDocument } from "./convert/retarget.js";
 import { ConversionError, ParseError } from "./errors/index.js";
 import { parseGedcom551 } from "./gedcom551/parser.js";
 import { stringifyGedcom551 } from "./gedcom551/serializer.js";
@@ -10,8 +11,7 @@ import type {
   GedcomRecordStream,
   ParseOptions,
   ParsedDocument,
-  StringifyOptions,
-  SupportedVersion
+  StringifyOptions
 } from "./types.js";
 
 export { convertGedcom } from "./convert/index.js";
@@ -146,16 +146,30 @@ export function streamGedcomRecords(input: string | Uint8Array, options: ParseOp
 /**
  * Serialize a {@link ParsedDocument} to GEDCOM text for the requested version.
  *
+ * When `options.version` differs from `document.version` the document is first
+ * mapped to the target version with the same mapper {@link convertGedcom} uses,
+ * so both entry points emit identical output for identical input. Mapping is
+ * lossy in the ways the fidelity matrix records; pass `options.diagnostics` to
+ * collect the warnings. Serialization itself never throws on a warning — use
+ * {@link convertGedcom} with `strict` for that.
+ *
+ * @throws {@link ConversionError} on an unsupported target version.
  * @public
  */
 export function stringifyGedcom(document: ParsedDocument, options: StringifyOptions): string {
-  if (options.version === "7.0.18") {
-    return stringifyGedcom7(document, options.lineEnding);
+  if (options.version !== "7.0.18" && options.version !== "5.5.1") {
+    throw new ConversionError(`Unsupported stringify target: ${String(options.version)}`);
   }
 
-  if (options.version === "5.5.1") {
-    return stringifyGedcom551(document, options.lineEnding);
+  const outputDocument = retargetDocument(document, options.version);
+
+  if (options.diagnostics) {
+    // `retargetDocument` preserves the source document's diagnostics as a prefix,
+    // so anything past that length is what this call added.
+    options.diagnostics.push(...outputDocument.diagnostics.slice(document.diagnostics.length));
   }
 
-  throw new ConversionError(`Unsupported stringify target: ${String(options.version)}`);
+  return options.version === "7.0.18"
+    ? stringifyGedcom7(outputDocument, options.lineEnding)
+    : stringifyGedcom551(outputDocument, options.lineEnding);
 }

@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [Unreleased]
+
+### Fixed
+
+- `stringifyGedcom(document, { version })` now maps the document to the target
+  version when `version` differs from `document.version`, instead of serializing
+  the source version's record bodies under the target version's header. A GEDCOM
+  7 document serialized as 5.5.1 previously kept 7.0 enumeration casing
+  (`2 TYPE MAIDEN`, `2 PEDI BIRTH`) and 7-only tags such as `NO`, which 5.5.1
+  consumers reject. `stringifyGedcom` and `convertGedcom` now share one mapping
+  path and produce identical output for identical input, in both the
+  7.0.18 → 5.5.1 and 5.5.1 → 7.0.18 directions. `stringifyGedcomZip` inherits the
+  fix for its `gedcom.ged` entry, which callers could not correct themselves.
+  Serializing to the document's own version is unchanged.
+
+### Added
+
+- `StringifyOptions.diagnostics`: an optional sink collecting the warnings raised
+  by the cross-version mapping described above. Serialization still never throws
+  on a warning; use `convertGedcom(..., { strict: true })` for that.
+
 ## [0.2.2] - 2026-06-08
 
 ### Fixed

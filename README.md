@@ -174,9 +174,23 @@ Because parsing is lazy, a malformed line or shape violation (missing/duplicate
 Throws immediately if the version cannot be detected and none is supplied, or if
 the input is GEDCOM 5.5/5.5.1.
 
-### `stringifyGedcom(document, { version })`
+### `stringifyGedcom(document, { version, lineEnding?, diagnostics? })`
 
 Serializes a `ParsedDocument` to GEDCOM text for the requested version.
+
+If `version` differs from `document.version`, the document is first mapped to the
+target version using the same mapper `convertGedcom` uses, so both entry points
+produce identical output for identical input — serializing a GEDCOM 7 document as
+`5.5.1` emits 5.5.1 enumerations (`2 TYPE maiden`, `2 PEDI birth`) and drops
+7-only structures rather than passing them through. `stringifyGedcomZip` inherits
+this, since it serializes its `gedcom.ged` entry through `stringifyGedcom`.
+
+That mapping is lossy in the ways the [fidelity matrix](docs/fidelity-matrix.md)
+records. Pass a `diagnostics` array to collect the warnings; unlike
+`convertGedcom(..., { strict: true })`, serialization never throws on one.
+
+Serializing to the document's own version is a pure round-trip: no mapping and no
+5.5.1 compatibility rewriting is applied.
 
 ### `parseGedcomZip(input)`
 

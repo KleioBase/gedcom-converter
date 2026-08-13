@@ -122,6 +122,14 @@ export interface StringifyOptions {
   version: SupportedVersion;
   /** Line ending for the emitted text. Defaults to `"LF"`. */
   lineEnding?: GedcomLineEnding;
+  /**
+   * Optional sink that collects diagnostics produced while serializing. When
+   * `version` differs from the document's own version the same mapper
+   * {@link ConversionResult conversion} uses runs first, and its lossy-structure
+   * warnings are appended here. Serialization never throws on a warning; pass a
+   * sink to see them.
+   */
+  diagnostics?: Diagnostic[];
 }
 
 /** The result of parsing a GEDZIP (`.gdz`) archive. */

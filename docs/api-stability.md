@@ -86,7 +86,7 @@ interface GedcomRecordStream extends Iterable<ParsedRecord> { readonly header: P
 interface ConversionStats { recordsProcessed: number; unsupportedStructures: number; preservedExtensions: number; }
 interface ConversionResult { version: SupportedVersion; output: string; diagnostics: Diagnostic[]; stats: ConversionStats; }
 interface ParseOptions { version?: ParseableVersion; strict?: boolean; }
-interface StringifyOptions { version: SupportedVersion; lineEnding?: GedcomLineEnding; }
+interface StringifyOptions { version: SupportedVersion; lineEnding?: GedcomLineEnding; diagnostics?: Diagnostic[]; }
 interface ConvertOptions { from: ParseableVersion; to: SupportedVersion; strict?: boolean; preserveUnknown?: boolean; preserveHeaderMeta?: boolean; }
 interface ParsedGedzip { document: ParsedDocument; files: Map<string, Uint8Array>; diagnostics: Diagnostic[]; }
 interface StringifyGedcomZipOptions extends StringifyOptions { diagnostics?: Diagnostic[]; }
