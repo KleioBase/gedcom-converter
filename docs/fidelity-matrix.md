@@ -46,7 +46,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 | Tag | v7 → 5.5.1 | 5.5.1 → v7 | 5.5 → v7 | Notes |
 | --- | --- | --- | --- | --- |
 | `NAME` | clean | clean | clean | TRAN translations are inlined into a note (`NAME_TRANSLATION_NOTED`). |
-| `NAME.TYPE` | lossy: enum case-folded; PHRASE preserved | lossy: aliased / `OTHER` + `PHRASE` | (same) | 5.5.1 stores e.g. `aka`; v7 stores `AKA`. 5.5.1 aliases like `ALSO_KNOWN_AS`, `IMMIGRATION`, `PROFESSION` are normalised. Unknown values become `TYPE OTHER` + `PHRASE`. |
+| `NAME.TYPE` | lossy: enum case-folded; PHRASE preserved | lossy: aliased / `OTHER` + `PHRASE` | (same) | 5.5.1 stores e.g. `aka`; v7 stores `AKA`. The v7-only `PROFESSIONAL` down-converts to `professional`, legal under 5.5.1's `<user defined>` (p.56). 5.5.1 aliases like `ALSO_KNOWN_AS`, `IMMIGRATION`, `PROFESSION` are normalised. Unknown values become `TYPE OTHER` + `PHRASE`. |
 | `NPFX` / `GIVN` / `SURN` / `NSFX` / `NICK` / `SPFX` | clean | clean | clean | |
 | `NAME.FONE` / `NAME.ROMN` | N/A — v7 has no phonetic/romanized name tags | lossy: → `NAME.TRAN` + `LANG und` | (same) | `FONE_TO_TRAN` / `ROMN_TO_TRAN`. v7 removed FONE/ROMN in favour of `TRAN` (§ NAME-TRAN), which requires `LANG` and has no slot for the 5.5.1 method `TYPE` (e.g. `kana`, `pinyin`); the method is dropped. On the way back the `TRAN` is hoisted to a NOTE. |
 | `SEX` | lossy: `X` → `U` | clean | clean | v7's `X` (unknown) downconverts to 5.5.1's `U`. |
@@ -72,7 +72,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 | `BAPL`, `CONL`, `ENDL` | clean | clean | clean | |
 | `SLGS` | lossy: TIME under DATE/STAT.DATE hoisted to note | clean | clean | `LDS_DATE_TIME_NOTED`, `LDS_STATUS_TIME_NOTED`. |
 | `SLGC` | lossy: rewritten to note when FAMC is absent | clean | clean | `SLGC_NOTED`. |
-| `STAT` (LDS) | lossy: invalid values (`DNS_CAN`, `INFANT`, `PRE_1970`) rewritten to note; TIME hoisted | lossy: aliases normalised (`DNS/CAN`→`DNS_CAN`, `PRE-1970`→`PRE_1970`); unknown values → STAT + PHRASE | (same) | Down: `STAT_NOTED`, `LDS_STATUS_TIME_NOTED`. Up: `LDS_STAT_UNMAPPED`. |
+| `STAT` (LDS) | lossy: re-spelled per ordinance (`DNS_CAN`→`DNS/CAN`, `PRE_1970`→`PRE-1970`); values that ordinance's 5.5.1 enum lacks rewritten to note; TIME hoisted | lossy: aliases normalised (`DNS/CAN`→`DNS_CAN`, `PRE-1970`→`PRE_1970`); unknown values → STAT + PHRASE | (same) | 5.5.1 scopes ordinance status per ordinance (`LDS_BAPTISM_DATE_STATUS` p.51, `LDS_SPOUSE_SEALING_DATE_STATUS` p.52, …) where v7 has one flat `ord-STAT`, so `DNS/CAN` is legal under `SLGS` but not `BAPL`. A value that is not a v7 enum member reached 5.5.1 from a 5.5.1 source as free text and is passed through untouched. Down: `STAT_NOTED`, `LDS_STATUS_TIME_NOTED`. Up: `LDS_STAT_UNMAPPED`. Not to be confused with `FAMC.STAT` (see Miscellaneous), a different enumeration under the same tag. |
 | `INIL` | lossy: entire structure rewritten to note | N/A | N/A | `INIL_NOTED`. v7-only initiatory ordinance. |
 | `TEMP` | clean | clean | clean | |
 
@@ -84,7 +84,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 | `FORM` (under `FILE`) | lossy: MIME → 5.5.1 token via `mapMimeToForm` + `FILE_FORM_ALIASES`; unknown MIME → `UNSUPPORTED_MIME` | lossy: 5.5.1 token → MIME via `FORM_TO_MIME`; unknown token preserved | (same) | The inverse path also collapses `jpeg→jpg` and `tiff→tif` via the 5.5.1 aliasing table. |
 | `FORM` (under `PLAC`) | lossy: redundant plain text dropped; otherwise inlined into TEXT | clean | clean | `TEXT_FORMAT_NOTED`. |
 | `MIME` | lossy: → 5.5.1 `FORM` | N/A | N/A | `UNSUPPORTED_MIME` when mime is outside the table. |
-| `MEDI` | clean (via FORM.TYPE mapping); unknown values demoted to `_TYPE` | lossy: uppercased to v7 enum; unknown → `OTHER` + `PHRASE` | (same) | Down: `_TYPE` demotion implicit. Up: `MEDI_PHRASE_FALLBACK`. |
+| `MEDI` | lossy: enum case-folded; `OTHER` → `electronic` under `FORM.TYPE`; unknown values kept verbatim | lossy: uppercased to v7 enum; unknown → `OTHER` + `PHRASE` | (same) | 5.5.1 `SOURCE_MEDIA_TYPE` (p.62) is lowercase and closed — no `<user defined>` escape — so the v7 spelling has no legal reading. Reaches 5.5.1 as `OBJE.FILE.FORM.TYPE` and as `SOUR.REPO.CALN.MEDI`; the `OTHER` → `electronic` degradation applies only to the former, since inventing a classification for a call number would be fabrication rather than a case fix. Up: `MEDI_PHRASE_FALLBACK`. |
 | `TITL` (under `OBJE`/`FILE`) | lossy: hoisted to OBJE NOTE | clean | clean | `OBJECT_TITLE_NOTED`, `FILE_TITLE_NOTED`. |
 | `CROP` | `_CROP` extension; or hoisted to OBJE NOTE | N/A | N/A | `OBJECT_CROP_NOTED`, `FILE_CROP_NOTED`. v7-only. |
 
@@ -166,8 +166,8 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 
 | Tag | v7 → 5.5.1 | 5.5.1 → v7 | 5.5 → v7 | Notes |
 | --- | --- | --- | --- | --- |
-| `RESN` | lossy: comma-list reduced to first valid 5.5.1 enum | lossy: unrecognised text → `_RESN` extension; valid tokens normalised | (same) | Down: `RESN_REDUCED`. Up: `RESN_NORMALIZED`, `RESN_PHRASE_FALLBACK`. |
-| `OBJE.RESN` | lossy: hoisted to OBJE NOTE | clean | clean | `OBJECT_RESN_NOTED`. |
+| `RESN` | lossy: comma-list reduced to the first valid enum; enum case-folded | lossy: unrecognised text → `_RESN` extension; valid tokens normalised | (same) | 5.5.1 `RESTRICTION_NOTICE` (p.60) is a closed lowercase set with no `<user defined>` escape, so `CONFIDENTIAL` down-converts to `confidential`. Down: `RESN_REDUCED` (the list reduction only, not the case fold). Up: `RESN_NORMALIZED`, `RESN_PHRASE_FALLBACK`. |
+| `OBJE.RESN` | lossy: hoisted to OBJE NOTE | clean | clean | `OBJECT_RESN_NOTED`. The note keeps the v7 value verbatim — prose is not the single-valued 5.5.1 enum, so it is neither reduced nor case-folded. |
 
 ## Pointer tags (general behaviour)
 
@@ -203,6 +203,7 @@ All pointer tags (`ALIA`, `ANCI`, `ASSO`, `CHIL`, `DESI`, `FAMC`, `FAMS`, `HUSB`
 | `NCHI` (with `_TYPE`/`_HUSB`/`_WIFE` metadata) | lossy: metadata hoisted to parent record notes | clean | clean | `NCHI_METADATA_NOTED`. |
 | `NO` (negation event) | lossy: rewritten to note | N/A | N/A | `NO_NOTED`. |
 | `PEDI` | lossy: `OTHER` hoisted to a family-link NOTE (`Pedigree: <phrase>`); standard values case-restored to lowercase | clean — standard values case-folded to the v7 enum; unknown values → `OTHER` + `PHRASE` | clean | Down: `PEDI_PHRASE_NOTED`. Up: `PEDI_PHRASE_FALLBACK`. The 5.5.1 lowercase enum (`birth`) ↔ v7 uppercase enum (`BIRTH`) round-trips exactly; out-of-set 5.5.1 values become `OTHER` + `PHRASE`. |
+| `FAMC.STAT` | lossy: enum case-folded | lossy: unmappable text → `_STAT` extension | (same) | 5.5.1 `CHILD_LINKAGE_STATUS` (p.44) is `[challenged \| disproven \| proven]` — lowercase, and a different enumeration from the LDS ordinance status that shares the `STAT` tag. Up: `FAMC_STAT_UNMAPPED`. |
 | `SKYPEID`, `JABBERID`, `_SKYPEID`, `_JABBERID` | lossy: hoisted to note as `Skype ID: …` / `Jabber ID: …` | N/A | N/A | `CONTACT_ID_NOTED`. |
 
 ---
@@ -250,6 +251,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `FORM_TO_MIME_UNMAPPED` | up | Unknown 5.5.1 FORM token preserved as-is. |
 | `IDNO_TYPE_SYNTHESIZED` | up | Missing `IDNO.TYPE` synthesised as `OTHER` + `PHRASE`. |
 | `INIL_NOTED` | compat | INIL structure rewritten to a note. |
+| `FAMC_STAT_UNMAPPED` | up | 5.5.1 FAMC STAT value outside the FAMC-STAT enum preserved as `_STAT`. |
 | `LDS_DATE_TIME_NOTED` | compat | LDS ordinance `DATE.TIME` hoisted to a note. |
 | `LDS_STATUS_TIME_NOTED` | compat | LDS `STAT.DATE.TIME` hoisted to a note. |
 | `LDS_STAT_UNMAPPED` | up | Unmapped 5.5.1 LDS STAT value preserved with a PHRASE. |
@@ -293,7 +295,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `SOURCE_PLACE_NOTE_NOTED` | compat | Source-record place NOTE hoisted to a DATA note. |
 | `SUBN_DROPPED` | up | Legacy 5.5/5.5.1 SUBN record omitted because GEDCOM 7 has no submission-record equivalent. |
 | `SSN_NOTED` | compat | SSN with fewer than 9 digits hoisted to a note. |
-| `STAT_NOTED` | compat | Invalid LDS STAT value rewritten to a note. |
+| `STAT_NOTED` | compat | LDS STAT value with no counterpart in that ordinance's 5.5.1 enumeration rewritten to a note. |
 | `TEXT_FORMAT_NOTED` | compat | NOTE/TEXT FORM inlined into the body. |
 | `TEXT_LANGUAGE_NOTED` | compat | NOTE/TEXT LANG inlined as `[Language: …]`. |
 | `TRAN_LANGUAGE_INLINED` | compat | `_TRAN` LANG inlined into the demoted value. |

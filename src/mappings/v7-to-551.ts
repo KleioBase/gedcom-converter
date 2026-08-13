@@ -1,4 +1,8 @@
-import { PEDI as PEDI_ENUM } from "../enums/index.js";
+import {
+  FAMC_STAT as FAMC_STAT_ENUM,
+  NAME_TYPE as NAME_TYPE_ENUM,
+  PEDI as PEDI_ENUM
+} from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 import { mapGedcom7DateNodeTo551 } from "./date/v7-to-551.js";
 
@@ -115,21 +119,20 @@ function mapMimeToForm(mime: string | undefined): string | undefined {
   }
 }
 
+// GEDCOM 5.5.1 NAME_TYPE (p.56) spells its enum lowercase and allows
+// `<user defined>` text, so every v7 NAME-TYPE value is emitted lowercase —
+// including `PROFESSIONAL`, which 5.5.1 lacks but which is legal user-defined
+// text and would otherwise be the one v7-cased value in an otherwise 5.5.1-cased
+// file. `OTHER` carries no meaning without its PHRASE and is left to the caller,
+// which substitutes the phrase when there is one.
 function mapGedcom7NameTypeTo551(value: string | undefined): string | undefined {
-  switch (value) {
-    case "AKA":
-      return "aka";
-    case "BIRTH":
-      return "birth";
-    case "IMMIGRANT":
-      return "immigrant";
-    case "MAIDEN":
-      return "maiden";
-    case "MARRIED":
-      return "married";
-    default:
-      return value;
+  if (!value) {
+    return value;
   }
+
+  const upper = value.toUpperCase();
+
+  return upper !== "OTHER" && NAME_TYPE_ENUM.has(upper) ? value.toLowerCase() : value;
 }
 
 function humanizeEnumValue(value: string | undefined): string | undefined {
@@ -459,6 +462,23 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
       return makeNode({
         level: node.level,
         tag: "PEDI",
+        value: node.value.toLowerCase(),
+        children: node.children
+          .map((child) => mapNode(child, diagnostics, extendMappingContext(context, node.tag)))
+          .filter((child): child is GedcomNode => child !== null)
+      });
+    }
+  }
+
+  // Restore 5.5.1's lowercase CHILD_LINKAGE_STATUS spelling (p.44). Same members
+  // as g7:enumset-FAMC-STAT, and unrelated to the LDS ordinance status that
+  // shares the STAT tag.
+  if (node.tag === "STAT" && context.parentTag === "FAMC" && node.value) {
+    const upper = node.value.toUpperCase();
+    if (FAMC_STAT_ENUM.has(upper)) {
+      return makeNode({
+        level: node.level,
+        tag: "STAT",
         value: node.value.toLowerCase(),
         children: node.children
           .map((child) => mapNode(child, diagnostics, extendMappingContext(context, node.tag)))

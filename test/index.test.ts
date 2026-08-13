@@ -876,7 +876,8 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(roundTripped.output).toContain("1 RESN PRIVACY");
+    expect(upgraded.output).toContain("1 RESN PRIVACY");
+    expect(roundTripped.output).toContain("1 RESN privacy");
   });
 
   it("round-trips a GEDCOM 5.5.1 ENDL ordinance through GEDCOM 7 and back", () => {
@@ -1430,9 +1431,9 @@ describe("convertGedcom", () => {
 
     expect(roundTripped.output).toContain("1 REPO @R1@");
     expect(roundTripped.output).toContain("2 CALN 929.3 Smi");
-    // MEDI round-trips value-preserving but case-asymmetric: 5.5.1 "book" →
-    // v7 enum "BOOK" → 5.5.1 "BOOK". v7→5.5.1 preserves the v7 enum verbatim.
-    expect(roundTripped.output).toContain("3 MEDI BOOK");
+    // 5.5.1 SOURCE_MEDIA_TYPE is lowercase and closed (no <user defined>), so
+    // the round-trip restores the 5.5.1 spelling: "book" → v7 "BOOK" → "book".
+    expect(roundTripped.output).toContain("3 MEDI book");
   });
 
   it("converts GEDCOM 5.5.1 multimedia FORM to a GEDCOM 7 MIME type", () => {
@@ -1846,7 +1847,7 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("0 @O1@ OBJE");
     expect(result.output).toContain("1 FILE media/photo.jpg");
     expect(result.output).toContain("2 FORM jpg");
-    expect(result.output).toContain("3 TYPE PHOTO");
+    expect(result.output).toContain("3 TYPE photo");
   });
 
   it("demotes incompatible GEDCOM 7 structures instead of emitting invalid GEDCOM 5.5.1 tags", () => {
@@ -1946,12 +1947,14 @@ describe("convertGedcom", () => {
   });
 
   it("rewrites invalid STAT values as notes while preserving their dates", () => {
+    // INFANT is a GEDCOM 7 ord-STAT member with no counterpart in any 5.5.1
+    // ordinance status enumeration, so it has nowhere to go but a note.
     const input = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
 0 @I1@ INDI
-1 SLGS
-2 STAT DNS_CAN
+1 BAPL
+2 STAT INFANT
 3 DATE 27 MAR 2022
 0 TRLR`;
 
@@ -1960,11 +1963,102 @@ describe("convertGedcom", () => {
       to: "5.5.1"
     });
 
-    expect(result.output).toContain("1 SLGS");
-    expect(result.output).toContain("2 NOTE Status: DNS_CAN");
+    expect(result.output).toContain("1 BAPL");
+    expect(result.output).toContain("2 NOTE Status: INFANT");
     expect(result.output).toContain("3 CONT Date: 27 MAR 2022");
-    expect(result.output).not.toContain("_STAT DNS_CAN");
+    expect(result.output).not.toContain("_STAT INFANT");
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "STAT_NOTED")).toBe(true);
+  });
+
+  it("emits the 5.5.1 spelling of an ordinance status that only differs by punctuation", () => {
+    // 5.5.1 spells these PRE-1970 (p.51) and DNS/CAN (p.52); v7 uses underscores.
+    // Both are legal 5.5.1 values, so noting them would be gratuitous data loss.
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BAPL
+2 STAT PRE_1970
+0 @F1@ FAM
+1 SLGS
+2 STAT DNS_CAN
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 STAT PRE-1970");
+    expect(result.output).toContain("2 STAT DNS/CAN");
+    expect(result.output).not.toContain("NOTE Status:");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "STAT_NOTED")).toBe(false);
+  });
+
+  it("notes an ordinance status that is valid in GEDCOM 7 but not for that 5.5.1 ordinance", () => {
+    // 5.5.1 scopes its status enumerations per ordinance: DNS/CAN belongs to
+    // LDS_SPOUSE_SEALING_DATE_STATUS (SLGS) and has no reading under BAPL.
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @I1@ INDI
+1 BAPL
+2 STAT DNS_CAN
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("2 NOTE Status: DNS_CAN");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "STAT_NOTED")).toBe(true);
+  });
+
+  it("round-trips a 5.5.1 FAMC child-linkage status without stranding it in a phrase", () => {
+    // CHILD_LINKAGE_STATUS (5.5.1 p.44) shares the STAT tag with the LDS
+    // ordinance status but is a different enumeration, spelled lowercase.
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 FAMC @F1@
+2 STAT proven
+0 @F1@ FAM
+1 CHIL @I1@
+0 TRLR`;
+
+    const upgraded = convertGedcom(input, { from: "5.5.1", to: "7.0.18" });
+    const roundTripped = convertGedcom(upgraded.output, { from: "7.0.18", to: "5.5.1" });
+
+    expect(upgraded.output).toContain("2 STAT PROVEN");
+    expect(upgraded.output).not.toContain("PHRASE proven");
+    expect(roundTripped.output).toContain("2 STAT proven");
+    expect(roundTripped.output).not.toContain("_PHRASE proven");
+    expect(upgraded.diagnostics.some((diagnostic) => diagnostic.code === "LDS_STAT_UNMAPPED")).toBe(false);
+  });
+
+  it("preserves an unmappable 5.5.1 FAMC child-linkage status as an extension", () => {
+    const input = `0 HEAD
+1 SOUR KleioBase
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 FAMC @F1@
+2 STAT unverified
+0 @F1@ FAM
+1 CHIL @I1@
+0 TRLR`;
+
+    const result = convertGedcom(input, { from: "5.5.1", to: "7.0.18" });
+
+    expect(result.output).toContain("2 _STAT unverified");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "FAMC_STAT_UNMAPPED")).toBe(true);
   });
 
   it("rewrites unsupported identifiers and contact ids as notes when 5.5.1 cannot carry them directly", () => {
@@ -2092,6 +2186,28 @@ describe("convertGedcom", () => {
     expect(result.output).toContain("1 NOTE Restriction: PRIVACY");
     expect(result.output).not.toContain("_RESN PRIVACY");
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "OBJECT_RESN_NOTED")).toBe(true);
+  });
+
+  it("preserves a full object-level RESN list in the note prose", () => {
+    // The note is not the single-valued 5.5.1 RESTRICTION_NOTICE enum, so the v7
+    // value survives whole: neither reduced to one token nor case-folded.
+    const input = `0 HEAD
+1 GEDC
+2 VERS 7.0.18
+0 @O1@ OBJE
+1 RESN CONFIDENTIAL, LOCKED
+1 FILE media/photo.jpg
+2 FORM image/jpeg
+3 MEDI PHOTO
+0 TRLR`;
+
+    const result = convertGedcom(input, {
+      from: "7.0.18",
+      to: "5.5.1"
+    });
+
+    expect(result.output).toContain("1 NOTE Restriction: CONFIDENTIAL, LOCKED");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RESN_REDUCED")).toBe(false);
   });
 
   it("hoists husband, wife, and child phrases into parent notes", () => {
@@ -2716,7 +2832,7 @@ describe("convertGedcom", () => {
     // The primary FILE/FORM is a supported format and stays structured.
     expect(result.output).toContain("1 FILE media/original.mp3");
     expect(result.output).toContain("2 FORM mp3");
-    expect(result.output).toContain("3 TYPE AUDIO");
+    expect(result.output).toContain("3 TYPE audio");
     expect(result.output).not.toContain("_FILE media/original.mp3");
     // v7 FILE.TRAN (alternate renditions) has no 5.5.1 equivalent and is noted.
     expect(result.output).toContain("1 NOTE File translation: media/derived.oga");
@@ -2812,7 +2928,7 @@ describe("convertGedcom", () => {
 
     expect(result.output).toContain("1 REPO @R1@");
     expect(result.output).toContain("2 CALN Call number");
-    expect(result.output).toContain("3 MEDI BOOK");
+    expect(result.output).toContain("3 MEDI book");
     expect(result.output).toContain("2 NOTE Call number media phrase: Booklet");
     expect(result.output).not.toContain("_PHRASE Booklet");
     expect(result.diagnostics.some((diagnostic) => diagnostic.code === "CALN_MEDI_PHRASE_NOTED")).toBe(true);

@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [Unreleased]
+
+The fixes below change the bytes this library emits for 5.5.1 output. All move
+output toward the specification, and none require a code change to adopt, but a
+consumer that byte-compares output will see differences in `RESN`, `NAME.TYPE`,
+`FAMC.STAT`, LDS ordinance `STAT`, and source media types.
+
+### Fixed
+
+- 5.5.1 output no longer carries GEDCOM 7 enumeration spellings for `RESN` and
+  `NAME.TYPE`. `RESTRICTION_NOTICE` (5.5.1 p.60) is a closed lowercase set with
+  no `<user defined>` escape, so `1 RESN CONFIDENTIAL` — which a 5.5.1 consumer
+  validating the enumeration rejects, dropping the restriction marker — is now
+  emitted as `1 RESN confidential`. The enum is matched case-insensitively, so a
+  document that already holds the spec-correct 5.5.1 value is left alone; it was
+  previously rewritten *into* the 7.0 spelling and told it had been "reduced for
+  GEDCOM 5.5.1 compatibility". `RESN_REDUCED` is now raised only for the genuine
+  comma-list-to-single-value reduction, not for a casing rewrite. `NAME.TYPE
+  PROFESSIONAL` (legal 5.5.1 `<user defined>` text, but the one 7.0-cased value
+  among its lowercase siblings) is now emitted as `professional`. An OBJE-level
+  `RESN`, which 5.5.1 cannot express and which is hoisted to a note, keeps the
+  7.0 value verbatim in that prose — it is no longer truncated to one token.
+- `FAMC.STAT` is no longer routed through the LDS ordinance status mapper. 5.5.1
+  `CHILD_LINKAGE_STATUS` (p.44) and the LDS ordinance status share the `STAT`
+  tag but are different enumerations, and treating the former as the latter
+  broke it in both directions: `2 STAT proven` up-converted to a valueless
+  `2 STAT` with the payload stranded in a `PHRASE` (invalid GEDCOM 7, and
+  reported under the misleading `LDS_STAT_UNMAPPED`), and `2 STAT PROVEN`
+  down-converted unchanged instead of to 5.5.1's lowercase `proven`. A 5.5.1
+  child-linkage status now survives a round-trip intact. A value outside the
+  enumeration is preserved as `_STAT` with the new `FAMC_STAT_UNMAPPED`. Both
+  `STAT` mappers now dispatch on the parent tag, so a `STAT` in a position 5.5.1
+  does not define (neither an LDS ordinance nor `FAMC`) keeps its value on the
+  line instead of having it moved into a `PHRASE`.
+- LDS ordinance `STAT` values that 5.5.1 spells with different punctuation are
+  re-spelled instead of being flattened into note prose. 5.5.1 uses `PRE-1970`
+  and `DNS/CAN` where GEDCOM 7 uses `PRE_1970` and `DNS_CAN`; the up-converter
+  already normalised these, so a valid 5.5.1 file lost its structured ordinance
+  status on a plain round-trip. Because 5.5.1 scopes its status enumerations per
+  ordinance where 7.0 has one flat set, the mapping is now per-ordinance: a
+  value that ordinance's 5.5.1 enumeration genuinely lacks (7.0's `INFANT`, or
+  `DNS/CAN` outside `SLGS`) still becomes a note. A `STAT` value that is not a
+  GEDCOM 7 enum member at all reached 5.5.1 from a 5.5.1 source as free text and
+  is passed through untouched rather than rewritten.
+- Source media types are emitted in the 5.5.1 spelling. `SOURCE_MEDIA_TYPE`
+  (p.62) is lowercase and, like `RESN`, closed — it has no `<user defined>`
+  escape — so `3 TYPE PHOTO` had no legal reading. Both locations are covered:
+  `OBJE.FILE.FORM.TYPE`, and `SOUR.REPO.CALN.MEDI`, which previously had no
+  media-type handling at all. As with `RESN`, an already-correct 5.5.1 value was
+  being actively rewritten *into* the 7.0 spelling; it is now left alone.
+
 ## [0.3.0] - 2026-08-13
 
 Three of the fixes below change the bytes this library emits. All move output

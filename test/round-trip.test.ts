@@ -119,6 +119,9 @@ const FIXTURES_70: FixtureSpec[] = [
       "REDUNDANT_ALIAS_PHRASE_DROPPED",
       "REDUNDANT_PLACE_TRANSLATION_DROPPED",
       "REFN_NOTED",
+      // The 5.5.1 leg emits the lowercase RESTRICTION_NOTICE spelling, so the
+      // trip back up reports normalising it into the v7 enum casing.
+      "RESN_NORMALIZED",
       "RESN_REDUCED",
       "ROLE_TO_RELA_FALLBACK",
       "SDATE_NOTED",

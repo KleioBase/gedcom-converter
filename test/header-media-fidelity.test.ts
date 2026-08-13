@@ -12,11 +12,12 @@ describe("multimedia is preserved without inventing a media TYPE", () => {
     expect(result.output).not.toMatch(/\d+ TYPE /);
   });
 
-  it("keeps a real MEDI as the FORM TYPE", () => {
+  it("keeps a real MEDI as the FORM TYPE, in the 5.5.1 spelling", () => {
     const v7 = `0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @O1@ OBJE\n1 FILE media/p.jpg\n2 FORM image/jpeg\n3 MEDI PHOTO\n0 TRLR`;
     const result = convertGedcom(v7, { from: "7.0.18", to: "5.5.1" });
     expect(result.output).toContain("2 FORM jpg");
-    expect(result.output).toContain("3 TYPE PHOTO");
+    expect(result.output).toContain("3 TYPE photo");
+    expect(result.output).not.toContain("3 TYPE PHOTO");
   });
 
   it("preserves FORM children (standard TYPE and vendor extensions) through a round-trip", () => {

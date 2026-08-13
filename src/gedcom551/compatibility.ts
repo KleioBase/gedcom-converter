@@ -1,3 +1,9 @@
+import {
+  LDS_ORDINANCE_TAGS,
+  ORD_STAT as ORD_STAT_ENUM,
+  RESN as RESN_ENUM,
+  gedcom551OrdStatSpelling
+} from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
 
 interface CompatibilityContext {
@@ -63,8 +69,6 @@ const POINTER_TAGS = new Set([
 const ALWAYS_DEMOTE_TAGS = new Set(["CROP", "TRAN"]);
 const ALWAYS_PHRASE_TAGS = new Set(["PHRASE"]);
 const NOTE_LIKE_PARENT_TAGS = new Set(["NOTE", "TEXT"]);
-const VALID_RESN_VALUES = new Set(["CONFIDENTIAL", "LOCKED", "PRIVACY"]);
-const INVALID_STAT_VALUES = new Set(["DNS_CAN", "INFANT", "PRE_1970"]);
 // Real-world 5.5.1 files use formats beyond the spec's small enum (bmp/gif/jpg/
 // ole/pcx/tif/wav). Accept every format the up-converter's FORM_TO_MIME knows
 // about so multimedia round-trips instead of collapsing the FILE to a note.
@@ -81,22 +85,43 @@ const FILE_FORM_ALIASES: Record<string, string> = {
   pdf: "pdf",
   txt: "txt"
 };
-const SOURCE_MEDIA_TYPE_ALIASES: Record<string, string> = {
-  audio: "AUDIO",
-  book: "BOOK",
-  card: "CARD",
-  electronic: "ELECTRONIC",
-  fiche: "FICHE",
-  film: "FILM",
-  magazine: "MAGAZINE",
-  manuscript: "MANUSCRIPT",
-  map: "MAP",
-  newspaper: "NEWSPAPER",
-  other: "ELECTRONIC",
-  photo: "PHOTO",
-  tombstone: "TOMBSTONE",
-  video: "VIDEO"
-};
+// 5.5.1 SOURCE_MEDIA_TYPE (p.62) is `[ audio | book | card | electronic | fiche
+// | film | magazine | manuscript | map | newspaper | photo | tombstone | video ]`
+// — lowercase, and closed: unlike NAME_TYPE it has no `<user defined>` escape,
+// so the uppercase g7:enumset-MEDI spelling has no legal reading here.
+const SOURCE_MEDIA_TYPES = new Set([
+  "audio",
+  "book",
+  "card",
+  "electronic",
+  "fiche",
+  "film",
+  "magazine",
+  "manuscript",
+  "map",
+  "newspaper",
+  "photo",
+  "tombstone",
+  "video"
+]);
+
+/**
+ * The 5.5.1 spelling of a source-media type, or `undefined` to leave the value
+ * alone. `otherFallback` is the long-standing `OBJE.FILE.FORM.TYPE` behaviour:
+ * v7's `MEDI OTHER` has no 5.5.1 member and degrades to `electronic`. It is
+ * deliberately not applied to `CALN.MEDI`, where inventing a classification
+ * would be a fabrication rather than a case fix.
+ */
+function gedcom551SourceMediaType(value: string, otherFallback: boolean): string | undefined {
+  const normalized = value.trim().toLowerCase();
+
+  if (SOURCE_MEDIA_TYPES.has(normalized)) {
+    return normalized;
+  }
+
+  return otherFallback && normalized === "other" ? "electronic" : undefined;
+}
+
 const LANGUAGE_ALIASES: Record<string, string> = {
   de: "German",
   deu: "German",
@@ -1688,23 +1713,39 @@ function sanitizeNode(
     nextNode = addValueAsTypeOrExtension(nextNode);
   }
 
-  if (nextNode.tag === "RESN" && nextNode.value) {
-    const preferredValue = nextNode.value
+  // GEDCOM 5.5.1 RESTRICTION_NOTICE (p.60) is `[confidential | locked | privacy]`
+  // — lowercase, a single value, and with no `<user defined>` escape, so a v7
+  // spelling has no legal reading. Match the v7 enum case-insensitively (an
+  // already-correct 5.5.1 value must be left alone) and emit the 5.5.1 spelling.
+  // An OBJE-level RESN is flattened to note prose further down and keeps the
+  // value it arrived with.
+  if (nextNode.tag === "RESN" && nextNode.value && context.parentTag !== "OBJE" && context.rootTag !== "OBJE") {
+    const tokens = nextNode.value
       .split(",")
-      .map((token) => token.trim().toUpperCase())
-      .find((token) => VALID_RESN_VALUES.has(token));
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+    const preferredToken = tokens.find((token) => RESN_ENUM.has(token.toUpperCase()));
 
-    if (preferredValue && preferredValue !== nextNode.value) {
-      pushWarning(
-        diagnostics,
-        "RESN_REDUCED",
-        `Reduced RESN value ${nextNode.value} to ${preferredValue} for GEDCOM 5.5.1 compatibility.`,
-        nextNode
-      );
-      nextNode = {
-        ...nextNode,
-        value: preferredValue
-      };
+    if (preferredToken) {
+      const preferredValue = preferredToken.toLowerCase();
+
+      // Only the genuine list-to-single reduction is a loss worth reporting; a
+      // pure casing rewrite is not.
+      if (tokens.length > 1) {
+        pushWarning(
+          diagnostics,
+          "RESN_REDUCED",
+          `Reduced RESN value ${nextNode.value} to ${preferredValue} for GEDCOM 5.5.1 compatibility.`,
+          nextNode
+        );
+      }
+
+      if (preferredValue !== nextNode.value) {
+        nextNode = {
+          ...nextNode,
+          value: preferredValue
+        };
+      }
     }
   }
 
@@ -1729,8 +1770,32 @@ function sanitizeNode(
     return makeNoteNode(nextNode.level, prependLabeledValue("Pedigree", phraseChild?.value ?? "Other"));
   }
 
-  if (nextNode.tag === "STAT" && nextNode.value && INVALID_STAT_VALUES.has(nextNode.value.toUpperCase())) {
-    return rewriteInvalidStatAsNote(nextNode, diagnostics);
+  // 5.5.1 defines a separate ordinance status enumeration per ordinance, and
+  // spells two shared members differently from v7 (`PRE-1970`, `DNS/CAN`). Emit
+  // the 5.5.1 spelling for the ordinance this STAT sits under; only a value that
+  // ordinance's enumeration genuinely lacks (e.g. v7's `INFANT`) becomes a note.
+  //
+  // The `ORD_STAT_ENUM` guard keeps this to values that came from v7. Anything
+  // else reached a 5.5.1 target from a 5.5.1 source as free text (real files
+  // carry plenty, e.g. `Cleared`), and passing it through beats deleting it.
+  if (
+    nextNode.tag === "STAT" &&
+    nextNode.value &&
+    LDS_ORDINANCE_TAGS.has(context.parentTag ?? "") &&
+    ORD_STAT_ENUM.has(nextNode.value)
+  ) {
+    const spelling = gedcom551OrdStatSpelling(context.parentTag!, nextNode.value);
+
+    if (!spelling) {
+      return rewriteInvalidStatAsNote(nextNode, diagnostics);
+    }
+
+    if (spelling !== nextNode.value) {
+      nextNode = {
+        ...nextNode,
+        value: spelling
+      };
+    }
   }
 
   if (nextNode.tag === "SSN" && nextNode.value && nextNode.value.replace(/\D/g, "").length < 9) {
@@ -1974,13 +2039,19 @@ function sanitizeNode(
     };
   }
 
-  if (nextNode.tag === "TYPE" && context.parentTag === "FORM" && nextNode.value) {
-    const normalizedMediaType = SOURCE_MEDIA_TYPE_ALIASES[nextNode.value.toLowerCase()];
+  // The same SOURCE_MEDIA_TYPE enumeration reaches 5.5.1 under two tags:
+  // `OBJE.FILE.FORM.TYPE` (the multimedia layout) and `SOUR.REPO.CALN.MEDI`.
+  if (
+    nextNode.value &&
+    ((nextNode.tag === "TYPE" && context.parentTag === "FORM") ||
+      (nextNode.tag === "MEDI" && context.parentTag === "CALN"))
+  ) {
+    const normalizedMediaType = gedcom551SourceMediaType(nextNode.value, nextNode.tag === "TYPE");
 
     // A known source-media-type maps to its canonical 5.5.1 enumeration value.
-    // Any other value is kept verbatim under TYPE — FORM.TYPE is a standard
-    // 5.5.1 substructure, so preserving the source value beats demoting it to
-    // an extension tag (which would silently lose round-trip fidelity).
+    // Any other value is kept verbatim — FORM.TYPE and CALN.MEDI are both
+    // standard 5.5.1 substructures, so preserving the source value beats
+    // demoting it to an extension tag (which would lose round-trip fidelity).
     if (normalizedMediaType) {
       nextNode = {
         ...nextNode,
@@ -2094,6 +2165,9 @@ function sanitizeNode(
     return rewriteUnsupportedIdentifierAsNote({ ...nextNode, tag: "_REFN" }, diagnostics);
   }
 
+  // 5.5.1 has no OBJE-level RESN at all, so the value becomes note prose. Prose
+  // is not the single-valued `RESTRICTION_NOTICE` enum, so the whole v7 value is
+  // preserved verbatim — neither reduced to one token nor case-folded.
   if (nextNode.tag === "RESN" && (context.parentTag === "OBJE" || context.rootTag === "OBJE")) {
     pushInfo(
       diagnostics,

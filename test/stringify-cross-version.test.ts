@@ -44,6 +44,22 @@ const V551 = [
   ""
 ].join("\n");
 
+// 5.5.1 spells its enumerations lowercase — RESTRICTION_NOTICE (p.60) is a
+// closed lowercase set, NAME_TYPE (p.56) is lowercase plus `<user defined>` —
+// where the corresponding v7 enum sets are uppercase.
+const V7_ENUMS = [
+  "0 HEAD",
+  "1 GEDC",
+  "2 VERS 7.0.18",
+  "1 SOUR KleioBase",
+  "0 @I1@ INDI",
+  "1 RESN CONFIDENTIAL",
+  "1 NAME M. Q. /Blum/",
+  "2 TYPE PROFESSIONAL",
+  "0 TRLR",
+  ""
+].join("\n");
+
 describe("stringifyGedcom cross-version mapping", () => {
   it("emits 5.5.1 lowercase NAME.TYPE and PEDI enumerations from a v7 document", () => {
     const output = stringifyGedcom(parseGedcom(V7), { version: "5.5.1" });
@@ -103,6 +119,99 @@ describe("stringifyGedcom cross-version mapping", () => {
     expect(parseGedcom(output).records[0]!.children.find((child) => child.tag === "NOTE")?.value).toBe(
       "line one\n@home address"
     );
+  });
+
+  it("emits the 5.5.1 RESN and NAME.TYPE spellings from a v7 document", () => {
+    const output = stringifyGedcom(parseGedcom(V7_ENUMS), { version: "5.5.1" });
+
+    expect(output).toContain("1 RESN confidential");
+    expect(output).toContain("2 TYPE professional");
+    expect(output).not.toContain("1 RESN CONFIDENTIAL");
+    expect(output).not.toContain("2 TYPE PROFESSIONAL");
+  });
+
+  it("agrees with convertGedcom on the 5.5.1 enum spellings", () => {
+    expect(stringifyGedcom(parseGedcom(V7_ENUMS), { version: "5.5.1" })).toBe(
+      convertGedcom(V7_ENUMS, { from: "7.0.18", to: "5.5.1" }).output
+    );
+  });
+
+  it("keeps the v7 enum spellings when the target is 7.0.18", () => {
+    const output = stringifyGedcom(parseGedcom(V7_ENUMS), { version: "7.0.18" });
+
+    expect(output).toContain("1 RESN CONFIDENTIAL");
+    expect(output).toContain("2 TYPE PROFESSIONAL");
+  });
+
+  it("leaves an already-5.5.1 RESN value alone and raises no diagnostic", () => {
+    const input = [
+      "0 HEAD",
+      "1 SOUR KleioBase",
+      "1 GEDC",
+      "2 VERS 5.5.1",
+      "2 FORM LINEAGE-LINKED",
+      "1 CHAR UTF-8",
+      "0 @I1@ INDI",
+      "1 RESN confidential",
+      "0 TRLR",
+      ""
+    ].join("\n");
+
+    const result = convertGedcom(input, { from: "5.5.1", to: "5.5.1" });
+
+    expect(result.output).toContain("1 RESN confidential");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RESN_REDUCED")).toBe(false);
+  });
+
+  it("still reduces a v7 RESN list to a single 5.5.1 value", () => {
+    const input = [
+      "0 HEAD",
+      "1 GEDC",
+      "2 VERS 7.0.18",
+      "1 SOUR KleioBase",
+      "0 @I1@ INDI",
+      "1 RESN CONFIDENTIAL, LOCKED",
+      "0 TRLR",
+      ""
+    ].join("\n");
+
+    const result = convertGedcom(input, { from: "7.0.18", to: "5.5.1" });
+
+    expect(result.output).toContain("1 RESN confidential");
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === "RESN_REDUCED")).toBe(true);
+  });
+
+  it("leaves an already-5.5.1 source media type alone rather than up-casing it", () => {
+    // SOURCE_MEDIA_TYPE is closed and lowercase in 5.5.1, so a spec-correct
+    // value must survive a 5.5.1 target untouched — in both of its locations.
+    const input = [
+      "0 HEAD",
+      "1 SOUR KleioBase",
+      "1 GEDC",
+      "2 VERS 5.5.1",
+      "2 FORM LINEAGE-LINKED",
+      "1 CHAR UTF-8",
+      "0 @O1@ OBJE",
+      "1 FILE p.jpg",
+      "2 FORM jpg",
+      "3 TYPE photo",
+      "0 @S1@ SOUR",
+      "1 TITL T",
+      "1 REPO @R1@",
+      "2 CALN 12",
+      "3 MEDI book",
+      "0 @R1@ REPO",
+      "1 NAME R",
+      "0 TRLR",
+      ""
+    ].join("\n");
+
+    const result = convertGedcom(input, { from: "5.5.1", to: "5.5.1" });
+
+    expect(result.output).toContain("3 TYPE photo");
+    expect(result.output).toContain("3 MEDI book");
+    expect(result.output).not.toContain("3 TYPE PHOTO");
+    expect(result.output).not.toContain("3 MEDI BOOK");
   });
 
   it("maps the gedcom.ged entry inside a GEDZIP archive", async () => {

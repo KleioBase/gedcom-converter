@@ -70,7 +70,10 @@ export const ROLE = new Set([
 /** g7:enumset-SEX — biological sex. v7 adds `X`; 5.5.1 only had M/F/U. */
 export const SEX = new Set(["M", "F", "X", "U"]);
 
-/** g7:enumset-FAMC-STAT — child-to-family link assessment. v7-only. */
+/**
+ * g7:enumset-FAMC-STAT — child-to-family link assessment. Not v7-only: 5.5.1
+ * has it as `CHILD_LINKAGE_STATUS` (p.44) under `FAMC`, spelled lowercase.
+ */
 export const FAMC_STAT = new Set(["CHALLENGED", "DISPROVEN", "PROVEN"]);
 
 /** g7:enumset-ord-STAT — LDS ordinance status. */
@@ -116,6 +119,61 @@ export const GEDCOM7_ENUM_SETS = {
 
 /** Sets that include an `OTHER` member, so an unmatched value may fall back to `OTHER` + `PHRASE`. */
 export const OTHER_BEARING_SETS: ReadonlySet<ReadonlySet<string>> = new Set([MEDI, PEDI, ROLE, NAME_TYPE]);
+
+// --- 5.5.1 spellings ---------------------------------------------------------
+
+/**
+ * The 5.5.1 spelling of each enumeration whose members differ from v7 by more
+ * than nothing. Down-conversion must consult these instead of passing the v7
+ * value through: several 5.5.1 enumerations are closed (no `<user defined>`
+ * escape), so a v7 spelling has no legal reading at all.
+ *
+ * Case-only differences are handled by lower-casing (`PEDI`, `RESN`,
+ * `NAME-TYPE`, `MEDI`, `FAMC-STAT`). The tables below cover the sets where the
+ * 5.5.1 spelling is not simply the lower-cased v7 one.
+ */
+
+/**
+ * 5.5.1 LDS ordinance status, per ordinance tag. v7 has one flat `ord-STAT`
+ * set; 5.5.1 defines a separate, smaller enumeration for each ordinance
+ * (`LDS_BAPTISM_DATE_STATUS` p.51, `LDS_ENDOWMENT_DATE_STATUS` p.52,
+ * `LDS_CHILD_SEALING_DATE_STATUS` p.51, `LDS_SPOUSE_SEALING_DATE_STATUS` p.52),
+ * and spells two of the shared members differently: `PRE-1970` and `DNS/CAN`.
+ * A v7 value absent from the target ordinance's set has no 5.5.1 equivalent.
+ */
+export const GEDCOM551_ORD_STAT_SETS: Record<string, ReadonlySet<string>> = {
+  BAPL: new Set(["CHILD", "COMPLETED", "EXCLUDED", "PRE-1970", "STILLBORN", "SUBMITTED", "UNCLEARED"]),
+  CONL: new Set(["CHILD", "COMPLETED", "EXCLUDED", "PRE-1970", "STILLBORN", "SUBMITTED", "UNCLEARED"]),
+  ENDL: new Set(["CHILD", "COMPLETED", "EXCLUDED", "PRE-1970", "STILLBORN", "SUBMITTED", "UNCLEARED"]),
+  SLGC: new Set(["BIC", "COMPLETED", "EXCLUDED", "DNS", "PRE-1970", "STILLBORN", "SUBMITTED", "UNCLEARED"]),
+  SLGS: new Set(["CANCELED", "COMPLETED", "DNS", "EXCLUDED", "DNS/CAN", "PRE-1970", "SUBMITTED", "UNCLEARED"])
+};
+
+/** The ordinance tags that carry a 5.5.1 `STAT` enumeration. */
+export const LDS_ORDINANCE_TAGS: ReadonlySet<string> = new Set(Object.keys(GEDCOM551_ORD_STAT_SETS));
+
+/**
+ * Collapse `-` and `/` to `_` so 5.5.1's `PRE-1970` / `DNS/CAN` and v7's
+ * `PRE_1970` / `DNS_CAN` compare equal. Shared by both directions.
+ */
+export function normalizeLdsStatToken(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s\-/]+/g, "_");
+}
+
+/**
+ * The 5.5.1 spelling of a v7 `ord-STAT` value for a given ordinance, or
+ * `undefined` when that ordinance's 5.5.1 enumeration has no such member (e.g.
+ * v7's `INFANT`, or `BIC` outside `SLGC`).
+ */
+export function gedcom551OrdStatSpelling(ordinanceTag: string, value: string): string | undefined {
+  const allowed = GEDCOM551_ORD_STAT_SETS[ordinanceTag.toUpperCase()];
+  if (!allowed) {
+    return undefined;
+  }
+
+  const normalized = normalizeLdsStatToken(value);
+  return [...allowed].find((member) => normalizeLdsStatToken(member) === normalized);
+}
 
 // --- 5.5.1 alias tables ------------------------------------------------------
 

@@ -1,4 +1,6 @@
 import {
+  FAMC_STAT as FAMC_STAT_ENUM,
+  LDS_ORDINANCE_TAGS,
   MEDI as MEDI_ENUM,
   NAME_TYPE as NAME_TYPE_ENUM,
   NAME_TYPE_ALIASES,
@@ -8,6 +10,8 @@ import {
   ROLE as ROLE_ENUM,
   ROLE_TEXT_ALIASES,
   enumOrPhrase,
+  normalizeEnumToken,
+  normalizeLdsStatToken,
   normalizeRoleToken
 } from "../enums/index.js";
 import type { Diagnostic, GedcomNode, ParsedDocument, ParsedRecord } from "../types.js";
@@ -305,10 +309,49 @@ function mapAgeNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return ageWithPhraseFallback(node, mappedChildren, raw);
 }
 
-function normalizeLdsStatToken(value: string): string {
-  // 5.5.1 spells the SLGS cancellation status `DNS/CAN`; v7 spells it `DNS_CAN`.
-  // Strip slash, hyphen, and whitespace so both forms collapse onto the v7 enum.
-  return value.trim().toUpperCase().replace(/[\s\-/]+/g, "_");
+// 5.5.1 `CHILD_LINKAGE_STATUS` (p.44) is `[challenged | disproven | proven]` —
+// the same members as g7:enumset-FAMC-STAT, spelled lowercase. It shares the
+// `STAT` tag with the LDS ordinance status but is a different enumeration, so it
+// needs its own mapper: routing it through the LDS one leaves a valueless v7
+// `STAT` with the payload stranded in a PHRASE.
+function mapChildLinkageStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
+  const raw = node.value?.trim();
+  const mappedChildren = node.children.map(cloneNode);
+
+  if (!raw) {
+    return makeNode({
+      level: node.level,
+      tag: "STAT",
+      children: mappedChildren
+    });
+  }
+
+  const normalized = normalizeEnumToken(raw);
+
+  if (FAMC_STAT_ENUM.has(normalized)) {
+    return makeNode({
+      level: node.level,
+      tag: "STAT",
+      value: normalized,
+      children: mappedChildren
+    });
+  }
+
+  // g7:enumset-FAMC-STAT is closed and has no OTHER member, so an unmappable
+  // value is preserved as an extension rather than emitted as an invalid enum.
+  diagnostics.push({
+    severity: "warning",
+    code: "FAMC_STAT_UNMAPPED",
+    message: `Unable to map GEDCOM 5.5.1 FAMC STAT value ${raw} to any GEDCOM 7 enum; preserved as _STAT.`,
+    location: withOptionalLocation(node)
+  });
+
+  return makeNode({
+    level: node.level,
+    tag: "_STAT",
+    value: raw,
+    children: mappedChildren
+  });
 }
 
 function mapLdsStatNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
@@ -1065,7 +1108,13 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
     return mapAgeNode(node, diagnostics);
   }
 
-  if (node.tag === "STAT") {
+  // `STAT` carries two unrelated 5.5.1 enumerations: the LDS ordinance status
+  // under BAPL/CONL/ENDL/SLGC/SLGS, and CHILD_LINKAGE_STATUS under FAMC.
+  if (node.tag === "STAT" && context.parentTag === "FAMC") {
+    return mapChildLinkageStatNode(node, diagnostics);
+  }
+
+  if (node.tag === "STAT" && LDS_ORDINANCE_TAGS.has(context.parentTag ?? "")) {
     return mapLdsStatNode(node, diagnostics);
   }
 
