@@ -123,6 +123,13 @@ export interface StringifyOptions {
   /** Line ending for the emitted text. Defaults to `"LF"`. */
   lineEnding?: GedcomLineEnding;
   /**
+   * Emit a leading U+FEFF byte-order mark. Defaults to `true` for `"7.0.18"`,
+   * whose spec (§1.1) says the first character of a data stream should be one,
+   * and to `false` for `"5.5.1"`, where readers of that era may not expect it.
+   * Parsing strips a leading BOM either way, so round-tripping is unaffected.
+   */
+  bom?: boolean;
+  /**
    * Optional sink that collects diagnostics produced while serializing. When
    * `version` differs from the document's own version the same mapper
    * {@link ConversionResult conversion} uses runs first, and its lossy-structure

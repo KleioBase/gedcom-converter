@@ -20,12 +20,19 @@ See [`docs/release-process.md`](./docs/release-process.md) for the release polic
   7.0.18 → 5.5.1 and 5.5.1 → 7.0.18 directions. `stringifyGedcomZip` inherits the
   fix for its `gedcom.ged` entry, which callers could not correct themselves.
   Serializing to the document's own version is unchanged.
+- GEDCOM 7 output now begins with a U+FEFF byte-order mark, as §1.1 requires
+  ("the first character in each data stream should be U+FEFF"). This covers the
+  `gedcom.ged` entry written inside a `.gdz` archive, which callers could not
+  prepend one to themselves. 5.5.1 output is unchanged and still has no BOM.
+  A leading BOM was already stripped on input, so round-tripping is unaffected.
 
 ### Added
 
 - `StringifyOptions.diagnostics`: an optional sink collecting the warnings raised
   by the cross-version mapping described above. Serialization still never throws
   on a warning; use `convertGedcom(..., { strict: true })` for that.
+- `StringifyOptions.bom`: overrides the per-version byte-order mark default —
+  `false` suppresses it on GEDCOM 7 output, `true` adds one to 5.5.1 output.
 
 ## [0.2.2] - 2026-06-08
 

@@ -100,6 +100,9 @@ function localFileReferences(document: ParsedDocument): Set<string> {
  * is added at its path (already-compressed media is stored, not re-deflated). A
  * `GEDZIP_FILE_MISSING` warning is collected for any local FilePath with no bytes;
  * the archive is still produced.
+ *
+ * The dataset is serialized through {@link stringifyGedcom}, so it carries the
+ * same byte-order mark that a standalone `.ged` would; override with `options.bom`.
  */
 export async function stringifyGedcomZip(
   document: ParsedDocument,

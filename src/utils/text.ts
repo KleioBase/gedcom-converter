@@ -2,6 +2,9 @@ import { decodeAnsel } from "./ansel.js";
 
 type ByteEncoding = "utf-8" | "utf-16le" | "utf-16be" | "ansel";
 
+/** U+FEFF. GEDCOM 7 §1.1 p.9: "The first character in each data stream should be U+FEFF." */
+export const BYTE_ORDER_MARK = "\uFEFF";
+
 // The `1 CHAR` line always lives in HEAD but can sit several KB in when the
 // header carries a long SOUR/NOTE block, so sniff a generous leading window.
 const CHARSET_SNIFF_LIMIT = 65536;
@@ -91,10 +94,14 @@ function decodeBytes(bytes: Uint8Array): string {
   }
 }
 
+function stripByteOrderMark(text: string): string {
+  return text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text;
+}
+
 export function decodeInput(input: string | Uint8Array): string {
   if (typeof input === "string") {
-    return input.replace(/^\uFEFF/, "");
+    return stripByteOrderMark(input);
   }
 
-  return decodeBytes(input).replace(/^\uFEFF/, "");
+  return stripByteOrderMark(decodeBytes(input));
 }

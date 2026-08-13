@@ -1,5 +1,5 @@
-import type { GedcomLineEnding, GedcomNode, ParsedDocument } from "../types.js";
-import { stringifyGedcomTree } from "../utils/lines.js";
+import type { GedcomNode, ParsedDocument } from "../types.js";
+import { stringifyGedcomTree, type SerializeOptions } from "../utils/lines.js";
 import { GEDCOM7_VERSION } from "./schema.js";
 
 function cloneAtLevel(node: GedcomNode, level: number): GedcomNode {
@@ -69,7 +69,7 @@ function buildHead(document: ParsedDocument): GedcomNode {
   };
 }
 
-export function stringifyGedcom7(document: ParsedDocument, lineEnding: GedcomLineEnding = "LF"): string {
+export function stringifyGedcom7(document: ParsedDocument, options: SerializeOptions = {}): string {
   const nodes: GedcomNode[] = [
     buildHead(document),
     ...document.records.map((record) => toRootNode(record)),
@@ -81,5 +81,10 @@ export function stringifyGedcom7(document: ParsedDocument, lineEnding: GedcomLin
     }
   ];
 
-  return stringifyGedcomTree(nodes, { mode: "gedcom7", lineEnding });
+  return stringifyGedcomTree(nodes, {
+    mode: "gedcom7",
+    // §1.1 p.9: "The first character in each data stream should be U+FEFF."
+    bom: options.bom ?? true,
+    ...(options.lineEnding !== undefined ? { lineEnding: options.lineEnding } : {})
+  });
 }

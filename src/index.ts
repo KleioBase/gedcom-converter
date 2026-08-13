@@ -153,6 +153,9 @@ export function streamGedcomRecords(input: string | Uint8Array, options: ParseOp
  * collect the warnings. Serialization itself never throws on a warning — use
  * {@link convertGedcom} with `strict` for that.
  *
+ * GEDCOM 7 output begins with a U+FEFF byte-order mark and 5.5.1 output does not;
+ * override either with `options.bom`.
+ *
  * @throws {@link ConversionError} on an unsupported target version.
  * @public
  */
@@ -169,7 +172,10 @@ export function stringifyGedcom(document: ParsedDocument, options: StringifyOpti
     options.diagnostics.push(...outputDocument.diagnostics.slice(document.diagnostics.length));
   }
 
-  return options.version === "7.0.18"
-    ? stringifyGedcom7(outputDocument, options.lineEnding)
-    : stringifyGedcom551(outputDocument, options.lineEnding);
+  const serialize = options.version === "7.0.18" ? stringifyGedcom7 : stringifyGedcom551;
+
+  return serialize(outputDocument, {
+    ...(options.lineEnding !== undefined ? { lineEnding: options.lineEnding } : {}),
+    ...(options.bom !== undefined ? { bom: options.bom } : {})
+  });
 }

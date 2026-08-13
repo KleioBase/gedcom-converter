@@ -1,5 +1,5 @@
-import type { GedcomLineEnding, GedcomNode, ParsedDocument } from "../types.js";
-import { stringifyGedcomTree } from "../utils/lines.js";
+import type { GedcomNode, ParsedDocument } from "../types.js";
+import { stringifyGedcomTree, type SerializeOptions } from "../utils/lines.js";
 import { GEDCOM551_CHARSET, GEDCOM551_FORM, GEDCOM551_VERSION } from "./schema.js";
 
 const DEFAULT_SUBMITTER_XREF = "@SUBM1@";
@@ -453,7 +453,7 @@ function buildSubmitterRecord(document: ParsedDocument): GedcomNode {
   };
 }
 
-export function stringifyGedcom551(document: ParsedDocument, lineEnding: GedcomLineEnding = "LF"): string {
+export function stringifyGedcom551(document: ParsedDocument, options: SerializeOptions = {}): string {
   const submitterXref = getSubmitterXref(document);
   const hasSubmitterRecord = document.records.some((record) => record.tag === "SUBM" && record.xref === submitterXref);
   const nodes: GedcomNode[] = [
@@ -468,5 +468,11 @@ export function stringifyGedcom551(document: ParsedDocument, lineEnding: GedcomL
     }
   ];
 
-  return stringifyGedcomTree(nodes, { mode: "gedcom551", lineEnding });
+  return stringifyGedcomTree(nodes, {
+    mode: "gedcom551",
+    // 5.5.1 permits a BOM on UTF-8 but never asks for one, and its ANSEL/ASCII
+    // readers may not tolerate one, so it stays opt-in here.
+    bom: options.bom ?? false,
+    ...(options.lineEnding !== undefined ? { lineEnding: options.lineEnding } : {})
+  });
 }

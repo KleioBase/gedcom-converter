@@ -174,7 +174,7 @@ Because parsing is lazy, a malformed line or shape violation (missing/duplicate
 Throws immediately if the version cannot be detected and none is supplied, or if
 the input is GEDCOM 5.5/5.5.1.
 
-### `stringifyGedcom(document, { version, lineEnding?, diagnostics? })`
+### `stringifyGedcom(document, { version, lineEnding?, bom?, diagnostics? })`
 
 Serializes a `ParsedDocument` to GEDCOM text for the requested version.
 
@@ -192,6 +192,9 @@ records. Pass a `diagnostics` array to collect the warnings; unlike
 Serializing to the document's own version is a pure round-trip: no mapping and no
 5.5.1 compatibility rewriting is applied.
 
+GEDCOM 7 output starts with a U+FEFF byte-order mark and 5.5.1 output does not;
+see [byte-order marks](#byte-order-marks) for the `bom` option.
+
 ### `parseGedcomZip(input)`
 
 Parses a FamilySearch GEDZIP (`.gdz`) archive and returns a
@@ -200,7 +203,7 @@ media keyed by archive path, and `diagnostics`. Encrypted archives reject with a
 error. `META-INF` entries are ignored and recorded as a diagnostic. Use
 `looksLikeZip(input)` to test whether a buffer is GEDZIP.
 
-### `stringifyGedcomZip(document, files, { version, lineEnding?, diagnostics? })`
+### `stringifyGedcomZip(document, files, { version, lineEnding?, bom?, diagnostics? })`
 
 Serializes a document and its bundled media to a GEDZIP (`.gdz`) archive and
 returns a `Promise<Uint8Array>`. The dataset is written as `gedcom.ged`
@@ -319,6 +322,22 @@ records regardless of input style. The serializer emits LF by default. Set
 ```ts
 stringifyGedcom(document, { version: "7.0.18", lineEnding: "CRLF" });
 ```
+
+### Byte-order marks
+
+GEDCOM 7 §1.1 says the first character of a data stream should be U+FEFF, so
+GEDCOM 7 output carries one. GEDCOM 5.5.1 output does not: a BOM is legal on its
+UTF-8 form, but readers of that era expect ANSEL or ASCII and may not tolerate
+one. Set `bom` to override either default:
+
+```ts
+stringifyGedcom(document, { version: "7.0.18", bom: false }); // no BOM
+stringifyGedcom(document, { version: "5.5.1", bom: true });   // BOM
+```
+
+`convertGedcom` follows the same per-version defaults, and `stringifyGedcomZip`
+passes `bom` through to the `gedcom.ged` entry it writes. Because a leading BOM
+is stripped on input, adding one does not affect round-tripping.
 
 ## Limitations
 

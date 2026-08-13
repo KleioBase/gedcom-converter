@@ -1,5 +1,6 @@
 import type { Diagnostic, GedcomLineEnding, GedcomNode } from "../types.js";
 import { ParseError } from "../errors/index.js";
+import { BYTE_ORDER_MARK } from "./text.js";
 
 const EOL_SEQUENCES: Record<GedcomLineEnding, string> = {
   LF: "\n",
@@ -24,9 +25,16 @@ const GEDCOM551_LINE_LIMIT = 255;
 
 type ContinuationMode = "gedcom7" | "gedcom551";
 
-interface StringifyOptions {
-  mode: ContinuationMode;
+/** Output knobs shared by the 5.5.1 and GEDCOM 7 serializers. */
+export interface SerializeOptions {
+  /** Line ending for the emitted text. Defaults to `"LF"`. */
   lineEnding?: GedcomLineEnding;
+  /** Emit a leading U+FEFF. Each serializer supplies its own version default. */
+  bom?: boolean;
+}
+
+interface StringifyTreeOptions extends SerializeOptions {
+  mode: ContinuationMode;
 }
 
 export function splitGedcomLines(input: string): string[] {
@@ -304,7 +312,7 @@ function emitGedcom551Node(lines: string[], node: GedcomNode): void {
   }
 }
 
-export function stringifyGedcomTree(nodes: GedcomNode[], options: StringifyOptions): string {
+export function stringifyGedcomTree(nodes: GedcomNode[], options: StringifyTreeOptions): string {
   const lines: string[] = [];
 
   for (const node of nodes) {
@@ -316,5 +324,5 @@ export function stringifyGedcomTree(nodes: GedcomNode[], options: StringifyOptio
   }
 
   const eol = EOL_SEQUENCES[options.lineEnding ?? "LF"];
-  return `${lines.join(eol)}${eol}`;
+  return `${options.bom ? BYTE_ORDER_MARK : ""}${lines.join(eol)}${eol}`;
 }
