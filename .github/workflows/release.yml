@@ -33,8 +33,10 @@ jobs:
 
       - name: Update npm
         # Trusted Publishing (OIDC) requires npm >= 11.5.1, newer than the npm
-        # bundled with Node 20.
-        run: npm install -g npm@latest
+        # bundled with Node 20. Pinned to the 11.x line rather than `latest`:
+        # npm 12 requires Node >= 22.22 and cannot install on the Node above, so
+        # `latest` breaks this job the moment a new major ships.
+        run: npm install -g npm@^11.5.1
 
       - name: Install dependencies
         run: npm ci
