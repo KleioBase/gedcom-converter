@@ -25,6 +25,14 @@ See [`docs/release-process.md`](./docs/release-process.md) for the release polic
   `gedcom.ged` entry written inside a `.gdz` archive, which callers could not
   prepend one to themselves. 5.5.1 output is unchanged and still has no BOM.
   A leading BOM was already stripped on input, so round-tripping is unaffected.
+- `detectGedcomVersion` now reads `HEAD.GEDC.VERS` specifically, instead of the
+  first `2 VERS` line anywhere in the file. Exporters record their own product
+  version in `HEAD.SOUR.VERS`, which precedes `GEDC`: MyHeritage stamps a literal
+  `2 VERS 5.5.1` there, so its GEDCOM 7 files — including ones this library
+  produced — were detected as 5.5.1, parsed by the 5.5.1 parser, and rejected by
+  `streamGedcomRecords`. Both parsers already scoped the lookup to `HEAD.GEDC`;
+  detection now agrees with them. A header with no `GEDC.VERS` at all still falls
+  back to the previous loose scan.
 
 ### Added
 

@@ -23,6 +23,37 @@ describe("detectGedcomVersion", () => {
     const input = "0 HEAD\r\n1 GEDC\r\n2 VERS 7.0.18\r\n0 TRLR\r\n";
     expect(detectGedcomVersion(input)).toBe("7.0.18");
   });
+
+  it("reads HEAD.GEDC.VERS, not the exporter's own HEAD.SOUR.VERS", () => {
+    // MyHeritage stamps its product version as a literal "5.5.1" under HEAD.SOUR,
+    // ahead of GEDC, so a scan for any `2 VERS` line misreads its GEDCOM 7 files.
+    const input = [
+      "0 HEAD",
+      "1 SOUR MYHERITAGE",
+      "2 NAME MyHeritage Family Tree Builder",
+      "2 VERS 5.5.1",
+      "1 GEDC",
+      "2 VERS 7.0.18",
+      "0 TRLR",
+      ""
+    ].join("\n");
+
+    expect(detectGedcomVersion(input)).toBe("7.0.18");
+  });
+
+  it("ignores a VERS outside HEAD entirely", () => {
+    const input = "0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @S1@ SOUR\n1 DATA\n2 VERS 5.5.1\n0 TRLR\n";
+    expect(detectGedcomVersion(input)).toBe("7.0.18");
+  });
+
+  it("falls back to a loose scan when HEAD carries no GEDC.VERS", () => {
+    // Malformed, but such files should still open rather than fail to detect.
+    expect(detectGedcomVersion("0 HEAD\n1 SOUR X\n2 VERS 5.5.1\n0 TRLR\n")).toBe("5.5.1");
+  });
+
+  it("returns unknown when no version is declared anywhere", () => {
+    expect(detectGedcomVersion("0 HEAD\n1 SOUR X\n0 TRLR\n")).toBe("unknown");
+  });
 });
 
 describe("parseGedcom", () => {

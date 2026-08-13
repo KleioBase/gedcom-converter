@@ -123,6 +123,11 @@ machine-readable `code` (part of the public contract; see the
 Returns `"7.0.18"`, `"5.5.1"`, `"5.5"`, or `"unknown"`. Accepts a string or
 `Uint8Array` (decoded by BOM + `1 CHAR`).
 
+The version is read from `HEAD.GEDC.VERS` specifically, not from the first
+`2 VERS` line in the file — exporters record their own product version in
+`HEAD.SOUR.VERS`, which comes first and can look like a GEDCOM version. A header
+carrying no `GEDC.VERS` at all falls back to a loose scan so the file still opens.
+
 ### `parseGedcom(input, { version?, strict? })`
 
 Parses GEDCOM text or bytes into a `ParsedDocument`. The version is detected

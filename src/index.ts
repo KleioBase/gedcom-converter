@@ -5,6 +5,7 @@ import { stringifyGedcom551 } from "./gedcom551/serializer.js";
 import { parseGedcom7 } from "./gedcom7/parser.js";
 import { streamGedcom7Records } from "./gedcom7/stream.js";
 import { stringifyGedcom7 } from "./gedcom7/serializer.js";
+import { parseLine } from "./utils/lines.js";
 import { decodeInput } from "./utils/text.js";
 import type {
   DetectedVersion,
@@ -37,21 +38,63 @@ export type {
   SupportedVersion
 } from "./types.js";
 
+/**
+ * Read `HEAD.GEDC.VERS` with a cheap level scan. Detection runs before parsing,
+ * on input that may not parse at all, so it walks lines rather than building a
+ * tree. Scoping to GEDC is what makes it correct: exporters put their own product
+ * version in `HEAD.SOUR.VERS`, which precedes GEDC and can look like a GEDCOM
+ * version — MyHeritage stamps a literal `2 VERS 5.5.1` there.
+ */
+function extractDeclaredVersion(normalized: string): string | undefined {
+  let inHeader = false;
+  let inGedc = false;
+
+  for (const line of normalized.split("\n")) {
+    const parsed = parseLine(line, 0);
+
+    if (!parsed) {
+      continue;
+    }
+
+    if (parsed.level === 0) {
+      if (inHeader) {
+        // HEAD ended without a GEDC.VERS; nothing later can supply one.
+        return undefined;
+      }
+      inHeader = parsed.tag === "HEAD";
+      continue;
+    }
+
+    if (!inHeader) {
+      continue;
+    }
+
+    if (parsed.level === 1) {
+      inGedc = parsed.tag === "GEDC";
+    } else if (parsed.level === 2 && inGedc && parsed.tag === "VERS") {
+      return parsed.value?.trim();
+    }
+  }
+
+  return undefined;
+}
+
 function extractVersionFromHead(input: string): DetectedVersion {
   const normalized = decodeInput(input).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // A header with no GEDC.VERS is malformed. Fall back to the first `2 VERS`
+  // line anywhere so such files still open, accepting that it may not be the
+  // GEDCOM version at all.
+  const version = extractDeclaredVersion(normalized) ?? /(?:^|\n)2 VERS (.+)/.exec(normalized)?.[1]?.trim();
 
-  if (/(?:^|\r?\n)2 VERS 5\.5\.1(?:\r?\n|$)/.test(normalized)) {
+  if (version === "5.5.1") {
     return "5.5.1";
   }
 
-  if (/(?:^|\r?\n)2 VERS 5\.5(?:\r?\n|$)/.test(normalized)) {
+  if (version === "5.5") {
     return "5.5";
   }
 
-  if (
-    /(?:^|\r?\n)2 VERS 7\.0\.18(?:\r?\n|$)/.test(normalized) ||
-    /(?:^|\r?\n)2 VERS 7\.0(?:\.\d+)?(?:\r?\n|$)/.test(normalized)
-  ) {
+  if (version !== undefined && /^7\.0(?:\.\d+)?$/.test(version)) {
     return "7.0.18";
   }
 
