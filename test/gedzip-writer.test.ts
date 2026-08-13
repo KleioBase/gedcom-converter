@@ -20,6 +20,19 @@ const GED = [
 
 const IMAGE = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
 
+/**
+ * Compare byte arrays without spreading them into JS arrays. Deep-equality over a
+ * few million elements takes seconds — enough on its own to trip the default
+ * timeout — and its diff would be unreadable anyway. Report the first differing
+ * offset instead.
+ */
+function expectBytesEqual(actual: Uint8Array, expected: Uint8Array): void {
+  expect(actual.length).toBe(expected.length);
+
+  const difference = actual.findIndex((byte, index) => byte !== expected[index]);
+  expect(difference === -1 ? "identical" : `first differs at byte ${difference}`).toBe("identical");
+}
+
 describe("stringifyGedcomZip", () => {
   it("round-trips a document and its media through the archive", async () => {
     const document = parseGedcom(GED, { version: "7.0.18" });
@@ -31,7 +44,7 @@ describe("stringifyGedcomZip", () => {
     expect([...archive.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
     const parsed = await parseGedcomZip(archive);
     expect(parsed.document.records.map((r) => r.tag)).toContain("INDI");
-    expect([...parsed.files.get("media/photo.jpg")!]).toEqual([...IMAGE]);
+    expectBytesEqual(parsed.files.get("media/photo.jpg")!, IMAGE);
   });
 
   it("warns when a referenced local FilePath has no bytes, but still writes the archive", async () => {
@@ -68,6 +81,6 @@ describe("stringifyGedcomZip", () => {
 
     expect([...archive.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
     const parsed = await parseGedcomZip(archive);
-    expect([...parsed.files.get("media/big.bin")!]).toEqual([...big]);
+    expectBytesEqual(parsed.files.get("media/big.bin")!, big);
   });
 });
