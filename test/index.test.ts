@@ -3113,7 +3113,7 @@ describe("convertGedcom", () => {
     });
 
     const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
-    expect(codes).toEqual(["UNSUPPORTED_MEDIA_FORMAT", "FILE_REFERENCE_NOTED"]);
+    expect(codes).toEqual(["UNSUPPORTED_MEDIA_FORMAT", "FILE_REFERENCE_NOTED", "FILE_FORMAT_NOTED"]);
   });
 
   it("can normalize a legacy GEDCOM 5.5 file into GEDCOM 5.5.1 output", () => {

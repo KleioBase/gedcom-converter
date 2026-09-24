@@ -99,6 +99,10 @@ function mapMimeToForm(mime: string | undefined): string | undefined {
       return "jpeg";
     case "image/gif":
       return "gif";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
     case "image/bmp":
       return "bmp";
     case "image/tiff":
@@ -571,6 +575,11 @@ function mapNode(node: GedcomNode, diagnostics: Diagnostic[], context: MappingCo
         message: `Unable to map multimedia media type ${formNode.value} to GEDCOM 5.5.1 FORM.`,
         location: withOptionalLocation(formNode)
       });
+      // Keep the media type as _FORM so the FILE_FORMAT_NOTED fallback records
+      // it next to the file reference, leaving the reference reconstructable.
+      mappedChildren.push(
+        makeNode({ level: node.level + 1, tag: "_FORM", value: formNode.value, children: [] })
+      );
     }
 
     for (const child of node.children) {

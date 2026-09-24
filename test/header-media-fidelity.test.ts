@@ -12,6 +12,29 @@ describe("multimedia is preserved without inventing a media TYPE", () => {
     expect(result.output).not.toMatch(/\d+ TYPE /);
   });
 
+  it.each([
+    ["image/png", "png"],
+    ["image/webp", "webp"]
+  ])("keeps the FILE for %s as FORM %s", (mime, form) => {
+    const v7 = `0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @O1@ OBJE\n1 FILE media/p\n2 FORM ${mime}\n0 TRLR`;
+    const result = convertGedcom(v7, { from: "7.0.18", to: "5.5.1" });
+    expect(result.output).toContain(`1 FILE media/p\n2 FORM ${form}\n`);
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it.each(["png", "webp"])("round-trips a 5.5.1 FORM %s unchanged", (form) => {
+    const input = `${H551}0 @O1@ OBJE\n1 FILE media/p\n2 FORM ${form}\n0 TRLR`;
+    const up = convertGedcom(input, { from: "5.5.1", to: "7.0.18" });
+    const back = convertGedcom(up.output, { from: "7.0.18", to: "5.5.1" });
+    expect(back.output).toContain(`1 FILE media/p\n2 FORM ${form}\n`);
+  });
+
+  it("notes the format alongside the file reference for an unmappable media type", () => {
+    const v7 = `0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @O1@ OBJE\n1 FILE media/p\n2 FORM application/x-other\n0 TRLR`;
+    const result = convertGedcom(v7, { from: "7.0.18", to: "5.5.1" });
+    expect(result.output).toContain("1 NOTE File reference: media/p\n1 NOTE File format: application/x-other\n");
+  });
+
   it("keeps a real MEDI as the FORM TYPE, in the 5.5.1 spelling", () => {
     const v7 = `0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @O1@ OBJE\n1 FILE media/p.jpg\n2 FORM image/jpeg\n3 MEDI PHOTO\n0 TRLR`;
     const result = convertGedcom(v7, { from: "7.0.18", to: "5.5.1" });

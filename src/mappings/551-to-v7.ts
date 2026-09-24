@@ -57,6 +57,8 @@ const FORM_TO_MIME: Record<string, string> = {
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
   gif: "image/gif",
+  png: "image/png",
+  webp: "image/webp",
   bmp: "image/bmp",
   tiff: "image/tiff",
   tif: "image/tiff",

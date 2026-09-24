@@ -171,6 +171,7 @@ const FIXTURES_70: FixtureSpec[] = [
     path: "official/gedcom70/obje-1.ged",
     version: "7.0.18",
     allowedDiagnostics: [
+      "FILE_FORMAT_NOTED",
       "FILE_REFERENCE_NOTED",
       "FILE_TITLE_NOTED",
       "FORM_TO_MIME_CONVERTED",

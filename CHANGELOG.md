@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [Unreleased]
+
+### Fixed
+
+- 5.5.1 output keeps the multimedia `FILE` reference for `image/png` and
+  `image/webp`, emitted as `2 FORM png` and `2 FORM webp`. Both MIME types were
+  missing from the down-converter's table, so the whole `FILE` was replaced by a
+  `File reference:` note and the link was lost. Like `pdf`, `mp3`, `mp4` and
+  `txt`, neither token is in the 5.5.1 `MULTIMEDIA_FORMAT` enumeration, but both
+  are understood in practice, and a 5.5.1 file holding them now round-trips
+  through 7.0 unchanged. A media type that still cannot be mapped now keeps its
+  format in a `File format:` note next to the `File reference:` note, so the
+  reference can be rebuilt.
 ## [0.4.0] - 2026-08-13
 
 The fixes below change the bytes this library emits for 5.5.1 output. All move

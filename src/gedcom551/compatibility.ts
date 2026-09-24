@@ -77,6 +77,8 @@ const FILE_FORM_ALIASES: Record<string, string> = {
   gif: "gif",
   jpeg: "jpg",
   jpg: "jpg",
+  png: "png",
+  webp: "webp",
   tif: "tif",
   tiff: "tif",
   wav: "wav",
