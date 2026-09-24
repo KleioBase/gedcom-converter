@@ -19,6 +19,14 @@ See [`docs/release-process.md`](./docs/release-process.md) for the release polic
   through 7.0 unchanged. A media type that still cannot be mapped now keeps its
   format in a `File format:` note next to the `File reference:` note, so the
   reference can be rebuilt.
+- 5.5.1 → 7.0 conversion now fixes date periods that carry a qualifier inside
+  `FROM`/`TO`, as MyHeritage writes them (`FROM ABT 1920 TO BEF 1930`). Neither
+  date grammar allows this, and the period was previously passed through as
+  invalid 7.0 output with no diagnostic. The qualifier is now removed from the
+  payload (`2 DATE FROM 1920 TO 1930`), the source wording is kept as
+  `3 PHRASE FROM ABT 1920 TO BEF 1930`, and the new
+  `QUALIFIED_DATE_PERIOD_NORMALIZED` diagnostic is raised. Converting back to
+  5.5.1 restores the source wording, so the round-trip is unchanged.
 ## [0.4.0] - 2026-08-13
 
 The fixes below change the bytes this library emits for 5.5.1 output. All move

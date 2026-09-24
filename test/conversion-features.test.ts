@@ -142,6 +142,54 @@ describe("ANSEL decoding", () => {
   });
 });
 
+describe("5.5.1 → v7 qualified date periods", () => {
+  const qualified = [
+    ["FROM ABT 1920 TO ABT 1930", "FROM 1920 TO 1930"],
+    ["FROM ABT 1930", "FROM 1930"],
+    ["TO ABT 1930", "TO 1930"],
+    ["FROM AFT 1950", "FROM 1950"],
+    ["FROM BEF 1985 TO BEF 2008", "FROM 1985 TO 2008"],
+    ["FROM 1916 TO BEF 1942", "FROM 1916 TO 1942"],
+    ["FROM 26 SEP 1972 TO ABT 1979", "FROM 26 SEP 1972 TO 1979"]
+  ];
+
+  it.each(qualified)("strips the qualifiers from %s and keeps the wording as PHRASE", (source, period) => {
+    const result = up(`0 @I1@ INDI\n1 RESI\n2 DATE ${source}`);
+    expect(result.output).toContain(`2 DATE ${period}\n3 PHRASE ${source}\n`);
+    expect(result.diagnostics.map((d) => d.code)).toEqual(["QUALIFIED_DATE_PERIOD_NORMALIZED"]);
+  });
+
+  it.each(qualified)("round-trips %s back to the source 5.5.1 wording", (source) => {
+    const result = roundTrip(`0 @I1@ INDI\n1 RESI\n2 DATE ${source}`);
+    expect(result.output).toContain(`2 DATE ${source}\n`);
+    expect(result.output).not.toContain("PHRASE");
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("applies to every DATE context, not just RESI", () => {
+    const result = up("0 @I1@ INDI\n1 BIRT\n2 DATE FROM ABT 1900\n1 DEAT\n2 DATE TO BEF 1990");
+    expect(result.output).toContain("2 DATE FROM 1900\n3 PHRASE FROM ABT 1900\n");
+    expect(result.output).toContain("2 DATE TO 1990\n3 PHRASE TO BEF 1990\n");
+  });
+
+  it("strips a qualifier ahead of a calendar keyword and restores it on the way back", () => {
+    const body = "0 @I1@ INDI\n1 RESI\n2 DATE FROM EST @#DJULIAN@ 1700 TO CAL 1710";
+    expect(up(body).output).toContain(
+      "2 DATE FROM JULIAN 1700 TO 1710\n3 PHRASE FROM EST @#DJULIAN@ 1700 TO CAL 1710\n"
+    );
+    expect(roundTrip(body).output).toContain("2 DATE FROM EST @#DJULIAN@ 1700 TO CAL 1710\n");
+  });
+
+  it("leaves conformant periods and qualified non-periods untouched", () => {
+    const result = up("0 @I1@ INDI\n1 RESI\n2 DATE FROM 1939 TO 1940\n1 BIRT\n2 DATE ABT 1900\n1 DEAT\n2 DATE BEF 1990");
+    expect(result.output).toContain("2 DATE FROM 1939 TO 1940\n");
+    expect(result.output).toContain("2 DATE ABT 1900\n");
+    expect(result.output).toContain("2 DATE BEF 1990\n");
+    expect(result.output).not.toContain("PHRASE");
+    expect(result.diagnostics).toHaveLength(0);
+  });
+});
+
 describe("UTF-16 decoding", () => {
   it("decodes a UTF-16LE BOM stream", () => {
     const text = "0 HEAD\n1 CHAR UNICODE\n0 TRLR\n";

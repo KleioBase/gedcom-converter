@@ -1,6 +1,7 @@
 import type { Diagnostic, GedcomNode } from "../../types.js";
 import { reescapeLegacyCalendar, validateFrenchRepublicanDate } from "./calendar-validation.js";
 import { applyHebrewAdarResolution } from "./hebrew.js";
+import { stripPeriodQualifiers } from "./period-qualifiers.js";
 
 const DATE_CALENDAR_ESCAPES: Record<string, string> = {
   GREGORIAN: "@#DGREGORIAN@",
@@ -54,7 +55,12 @@ export function mapGedcom7DateNodeTo551(node: GedcomNode, diagnostics: Diagnosti
   let outputValue = convertedValue;
 
   if (phraseNode?.value) {
-    if (!convertedValue || convertedValue.length === 0) {
+    const phrase = normalizeSpacing(phraseNode.value);
+    if (convertedValue && phrase !== convertedValue && stripPeriodQualifiers(phrase) === convertedValue) {
+      // The PHRASE is the qualified 5.5.1 period the up-converter stripped;
+      // restore it so the source wording round-trips.
+      outputValue = phrase;
+    } else if (!convertedValue || convertedValue.length === 0) {
       outputValue = `(${phraseNode.value})`;
     } else if (canInlinePhrase(convertedValue)) {
       outputValue = `INT ${convertedValue} (${phraseNode.value})`;

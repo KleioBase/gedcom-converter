@@ -5,6 +5,7 @@ import {
   validateFrenchRepublicanDate
 } from "./calendar-validation.js";
 import { applyHebrewAdarResolution } from "./hebrew.js";
+import { stripPeriodQualifiers } from "./period-qualifiers.js";
 
 // Inverse of DATE_CALENDAR_ESCAPES in ./v7-to-551.ts. 5.5.1 wraps the calendar
 // identifier in @#D…@; v7 prepends a bare keyword to the date payload. The
@@ -168,7 +169,8 @@ export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnost
     node
   );
   const { calendarConverted, epochConverted } = converted;
-  const value = applyHebrewAdarResolution(node, converted.value, diagnostics);
+  const resolvedValue = applyHebrewAdarResolution(node, converted.value, diagnostics);
+  const value = resolvedValue !== undefined ? stripPeriodQualifiers(resolvedValue) : undefined;
 
   if (calendarConverted) {
     diagnostics.push({
@@ -188,6 +190,26 @@ export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnost
   }
 
   const children = [...node.children];
+
+  // A qualifier inside FROM/TO is invalid in both grammars. The stripped period
+  // stays in the payload; the source wording is kept as the PHRASE, which the
+  // down-converter restores verbatim.
+  if (value !== resolvedValue && node.value !== undefined) {
+    diagnostics.push({
+      severity: "info",
+      code: "QUALIFIED_DATE_PERIOD_NORMALIZED",
+      message: `Removed a qualifier inside GEDCOM 5.5.1 date period ${node.value.trim()} to produce a valid GEDCOM 7 DatePeriod.`,
+      location: withOptionalLocation(node)
+    });
+    if (!phraseInfo?.phrase) {
+      children.push({
+        level: node.level + 1,
+        tag: "PHRASE",
+        value: normalizeSpacing(node.value),
+        children: []
+      });
+    }
+  }
 
   if (phraseInfo?.phrase && !children.some((child) => child.tag === "PHRASE")) {
     diagnostics.push({
