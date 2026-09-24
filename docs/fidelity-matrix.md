@@ -58,7 +58,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 | Individual events: `BIRT`, `DEAT`, `BURI`, `CHR`, `CHRA`, `BAPM`, `BARM`, `BASM`, `BLES`, `CONF`, `FCOM`, `ORDN`, `NATU`, `EMIG`, `IMMI`, `CENS`, `PROB`, `WILL`, `GRAD`, `RETI`, `ADOP`, `CREM` | clean | clean | clean | TIME children on DATE are hoisted to a note (`EVENT_TIME_NOTED`). |
 | Family events: `ANUL`, `DIV`, `DIVF`, `ENGA`, `MARB`, `MARC`, `MARL`, `MARR`, `MARS`, `CENS` | clean | clean | clean | |
 | `EVEN` (generic event) | lossy: value moved to `TYPE` or `_VALUE`; TIME hoisted | clean | clean | `VALUE_NOTED`, `EVENT_TIME_NOTED`. |
-| Individual attributes: `OCCU`, `EDUC`, `RELI`, `CAST`, `NATI`, `NCHI`, `NMR`, `PROP`, `TITL`, `DSCR` | clean | clean | clean | |
+| Individual attributes: `OCCU`, `EDUC`, `RELI`, `CAST`, `NATI`, `NCHI`, `NMR`, `PROP`, `TITL`, `DSCR` | clean | clean, except an XML-encoded `DSCR` payload (`<DSCR><HAIR>Brown</HAIR>…</DSCR>`, as MyHeritage writes it) is rewritten as `Hair: Brown, …` | clean | Up: `DSCR_XML_PAYLOAD_NORMALIZED`. Malformed or truncated XML is kept verbatim. |
 | `IDNO` | clean | lossy: `TYPE OTHER` + `PHRASE` synthesised when 5.5.1 source omits TYPE | (same) | `IDNO_TYPE_SYNTHESIZED`. v7 §3.3.2.1 requires `TYPE` on `IDNO`. |
 | `FACT` | clean — converted to `EVEN` | N/A | N/A | v7-only generic attribute. |
 | `RESI` | lossy: value demoted to `TYPE`/`_VALUE`; `_VALUE` children hoisted to note | clean | clean | `VALUE_NOTED`. |
@@ -235,6 +235,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `DATE_PHRASE_DEGRADED` | down | v7 DATE PHRASE could not be inlined into a 5.5.1 DATE payload. |
 | `DATE_PHRASE_EXTRACTED` | up | 5.5.1 bare `(…)` date phrase moved into a v7 PHRASE substructure. |
 | `DROPPED_MISSING_POINTER` | compat | Pointer to a record that doesn't exist after conversion. |
+| `DSCR_XML_PAYLOAD_NORMALIZED` | up | XML-encoded 5.5.1 DSCR payload rewritten as readable `Label: value` text. |
 | `EVENT_TIME_NOTED` | compat | Event `DATE.TIME` hoisted to an event note. |
 | `EXID_PRESERVED` | down | v7 EXID not eligible for REFN conversion; stored as `_EXID`. |
 | `EXID_TO_REFN` | down | v7 EXID mapped into 5.5.1 REFN. |

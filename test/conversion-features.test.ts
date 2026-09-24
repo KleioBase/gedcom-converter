@@ -190,6 +190,38 @@ describe("5.5.1 → v7 qualified date periods", () => {
   });
 });
 
+describe("5.5.1 → v7 XML-encoded DSCR", () => {
+  it("rewrites the MyHeritage XML payload as readable text", () => {
+    const result = up(
+      "0 @I1@ INDI\n1 DSCR <DSCR><HAIR>Brown</HAIR><EYES>Brown</EYES><WEIGHT>59.9</WEIGHT><HEIGHT>182</HEIGHT></DSCR>"
+    );
+    expect(result.output).toContain("1 DSCR Hair: Brown, Eyes: Brown, Weight: 59.9, Height: 182\n");
+    expect(result.diagnostics.map((d) => d.code)).toEqual(["DSCR_XML_PAYLOAD_NORMALIZED"]);
+  });
+
+  it("keeps unknown elements generically, decoding entities and skipping empty ones", () => {
+    const result = up("0 @I1@ INDI\n1 DSCR <DSCR><BLOOD_TYPE>A &amp; B</BLOOD_TYPE><SKIN></SKIN></DSCR>");
+    expect(result.output).toContain("1 DSCR Blood type: A & B\n");
+  });
+
+  it("leaves free-text DSCR untouched", () => {
+    const result = up("0 @I1@ INDI\n1 DSCR Tall with brown hair");
+    expect(result.output).toContain("1 DSCR Tall with brown hair\n");
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it.each([
+    "<DSCR><HAIR>Brown</HAIR><EYES>Brown",
+    "<DSCR><HAIR>Brown</EYES></DSCR>",
+    "<DSCR></DSCR>",
+    "<DSCR>loose text<HAIR>Brown</HAIR></DSCR>"
+  ])("keeps malformed payload %s verbatim", (payload) => {
+    const result = up(`0 @I1@ INDI\n1 DSCR ${payload}`);
+    expect(result.output).toContain(`1 DSCR ${payload}\n`);
+    expect(result.diagnostics).toHaveLength(0);
+  });
+});
+
 describe("UTF-16 decoding", () => {
   it("decodes a UTF-16LE BOM stream", () => {
     const text = "0 HEAD\n1 CHAR UNICODE\n0 TRLR\n";

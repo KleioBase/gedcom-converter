@@ -311,6 +311,63 @@ function mapAgeNode(node: GedcomNode, diagnostics: Diagnostic[]): GedcomNode {
   return ageWithPhraseFallback(node, mappedChildren, raw);
 }
 
+const XML_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'" };
+
+// MyHeritage writes the physical description as XML inside the free-text DSCR
+// payload (`<DSCR><HAIR>Brown</HAIR><HEIGHT>146</HEIGHT></DSCR>`). Returns the
+// `Hair: Brown, Height: 146` reading, or undefined unless every element parses.
+function readableXmlDescription(raw: string): string | undefined {
+  const wrapper = /^\s*<DSCR>([\s\S]*)<\/DSCR>\s*$/.exec(raw);
+  if (!wrapper) {
+    return undefined;
+  }
+
+  const elementPattern = /\s*<([A-Za-z_][\w.-]*)>([^<]*)<\/\1>\s*/y;
+  const inner = wrapper[1] ?? "";
+  const pairs: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = elementPattern.exec(inner)) !== null) {
+    const name = (match[1] ?? "").replace(/_/g, " ").toLowerCase();
+    const value = (match[2] ?? "")
+      .replace(/&(amp|lt|gt|quot|apos);/g, (_entity, key: string) => XML_ENTITIES[key] ?? _entity)
+      .trim();
+    if (value) {
+      pairs.push(`${name.charAt(0).toUpperCase()}${name.slice(1)}: ${value}`);
+    }
+    if (elementPattern.lastIndex === inner.length) {
+      break;
+    }
+  }
+
+  if (elementPattern.lastIndex !== inner.length || pairs.length === 0) {
+    return undefined;
+  }
+
+  return pairs.join(", ");
+}
+
+function mapDescriptionNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnostic[]): GedcomNode {
+  const readable = node.value !== undefined ? readableXmlDescription(node.value) : undefined;
+
+  if (readable !== undefined) {
+    diagnostics.push({
+      severity: "info",
+      code: "DSCR_XML_PAYLOAD_NORMALIZED",
+      message: `Rewrote XML-encoded GEDCOM 5.5.1 DSCR payload as readable GEDCOM 7 text.`,
+      location: withOptionalLocation(node)
+    });
+  }
+
+  const value = readable ?? node.value;
+  return makeNode({
+    level: node.level,
+    tag: node.tag,
+    ...(value !== undefined ? { value } : {}),
+    children: node.children.map((child) => mapNode(child, extendMappingContext(context, node.tag), diagnostics))
+  });
+}
+
 // 5.5.1 `CHILD_LINKAGE_STATUS` (p.44) is `[challenged | disproven | proven]` —
 // the same members as g7:enumset-FAMC-STAT, spelled lowercase. It shares the
 // `STAT` tag with the LDS ordinance status but is a different enumeration, so it
@@ -1188,6 +1245,10 @@ function mapNode(node: GedcomNode, context: MappingContext, diagnostics: Diagnos
 
   if (node.tag === "DATE") {
     return mapGedcom551DateNodeToV7(node, diagnostics);
+  }
+
+  if (node.tag === "DSCR") {
+    return mapDescriptionNode(node, context, diagnostics);
   }
 
   if (node.tag === "OBJE") {

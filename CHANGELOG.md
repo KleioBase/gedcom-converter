@@ -27,6 +27,12 @@ See [`docs/release-process.md`](./docs/release-process.md) for the release polic
   `3 PHRASE FROM ABT 1920 TO BEF 1930`, and the new
   `QUALIFIED_DATE_PERIOD_NORMALIZED` diagnostic is raised. Converting back to
   5.5.1 restores the source wording, so the round-trip is unchanged.
+- 5.5.1 → 7.0 conversion now rewrites the XML that MyHeritage writes into the
+  free-text `DSCR` payload (`<DSCR><HAIR>Brown</HAIR><HEIGHT>146</HEIGHT></DSCR>`)
+  as readable text (`Hair: Brown, Height: 146`), raising the new
+  `DSCR_XML_PAYLOAD_NORMALIZED` diagnostic. Unknown elements keep a generic
+  label, and malformed or truncated XML is left exactly as it was.
+
 ## [0.4.0] - 2026-08-13
 
 The fixes below change the bytes this library emits for 5.5.1 output. All move
