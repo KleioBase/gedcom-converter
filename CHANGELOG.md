@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [`docs/release-process.md`](./docs/release-process.md) for the release policy.
 
+## [Unreleased]
+
+### Fixed
+
+- 5.5.1 → 7.0 conversion now also fixes `BET … AND …` date ranges that carry a
+  qualifier on either end (`BET ABT 1936 AND 1939`, `BET AFT APR 1904 AND BEF
+  1907`). They passed through unchanged, producing invalid 7.0 output with no
+  diagnostic. They now get the same treatment as qualified `FROM`/`TO` periods:
+  the qualifiers are removed from the 7.0 payload, the source wording is kept as
+  a `PHRASE`, `QUALIFIED_DATE_PERIOD_NORMALIZED` is raised, and converting back
+  to 5.5.1 restores the original wording.
+
 ## [0.5.0] - 2026-09-25
 
 ### Fixed

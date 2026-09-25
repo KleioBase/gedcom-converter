@@ -150,7 +150,12 @@ describe("5.5.1 → v7 qualified date periods", () => {
     ["FROM AFT 1950", "FROM 1950"],
     ["FROM BEF 1985 TO BEF 2008", "FROM 1985 TO 2008"],
     ["FROM 1916 TO BEF 1942", "FROM 1916 TO 1942"],
-    ["FROM 26 SEP 1972 TO ABT 1979", "FROM 26 SEP 1972 TO 1979"]
+    ["FROM 26 SEP 1972 TO ABT 1979", "FROM 26 SEP 1972 TO 1979"],
+    ["BET ABT 1936 AND 1939", "BET 1936 AND 1939"],
+    ["BET 1946 AND AFT FEB 1948", "BET 1946 AND FEB 1948"],
+    ["BET AFT APR 1904 AND BEF 1907", "BET APR 1904 AND 1907"],
+    ["BET BEF 1902 AND AFT 1903", "BET 1902 AND 1903"],
+    ["BET CAL 1800 AND EST 1810", "BET 1800 AND 1810"]
   ];
 
   it.each(qualified)("strips the qualifiers from %s and keeps the wording as PHRASE", (source, period) => {
@@ -181,8 +186,11 @@ describe("5.5.1 → v7 qualified date periods", () => {
   });
 
   it("leaves conformant periods and qualified non-periods untouched", () => {
-    const result = up("0 @I1@ INDI\n1 RESI\n2 DATE FROM 1939 TO 1940\n1 BIRT\n2 DATE ABT 1900\n1 DEAT\n2 DATE BEF 1990");
+    const result = up(
+      "0 @I1@ INDI\n1 RESI\n2 DATE FROM 1939 TO 1940\n1 BIRT\n2 DATE ABT 1900\n1 DEAT\n2 DATE BEF 1990\n1 BURI\n2 DATE BET 1990 AND 1991"
+    );
     expect(result.output).toContain("2 DATE FROM 1939 TO 1940\n");
+    expect(result.output).toContain("2 DATE BET 1990 AND 1991\n");
     expect(result.output).toContain("2 DATE ABT 1900\n");
     expect(result.output).toContain("2 DATE BEF 1990\n");
     expect(result.output).not.toContain("PHRASE");

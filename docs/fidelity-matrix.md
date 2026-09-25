@@ -92,7 +92,7 @@ Each row is one tag. The "Notes" column flags context-specific behaviour (e.g. a
 
 | Tag | v7 → 5.5.1 | 5.5.1 → v7 | 5.5 → v7 | Notes |
 | --- | --- | --- | --- | --- |
-| `DATE` | lossy: calendar keyword → `@#D…@` escape; `BCE` → `B.C.`; PHRASE inlined as `INT … (…)` or dropped | lossy: calendar escape → keyword; `B.C.` → `BCE`; 5.5.1 `INT … (…)` and bare `(…)` phrases extracted to a `PHRASE` substructure | (same) | Down: `DATE_PHRASE_DEGRADED`. Up: `DATE_CALENDAR_ESCAPE_CONVERTED`, `DATE_EPOCH_CONVERTED`, `DATE_CALENDAR_ESCAPE_UNRECOGNIZED`, `DATE_INT_CONVERTED`, `DATE_PHRASE_EXTRACTED`, `QUALIFIED_DATE_PERIOD_NORMALIZED`. A qualifier inside a period (`FROM ABT 1920 TO BEF 1930`), invalid in both grammars, is stripped from the v7 payload and the source wording kept as `PHRASE`; the down leg restores that wording verbatim. The `INT`/phrase round-trip is exact (`INT 1900 (about)` ↔ `1900` + `PHRASE about`). Date range/period keywords (`FROM`/`TO`/`BET`/`AND`/`BEF`/`AFT`/`ABT`/`CAL`/`EST`) are identical in both versions and pass through. Calendar month-token coverage remains planned. |
+| `DATE` | lossy: calendar keyword → `@#D…@` escape; `BCE` → `B.C.`; PHRASE inlined as `INT … (…)` or dropped | lossy: calendar escape → keyword; `B.C.` → `BCE`; 5.5.1 `INT … (…)` and bare `(…)` phrases extracted to a `PHRASE` substructure | (same) | Down: `DATE_PHRASE_DEGRADED`. Up: `DATE_CALENDAR_ESCAPE_CONVERTED`, `DATE_EPOCH_CONVERTED`, `DATE_CALENDAR_ESCAPE_UNRECOGNIZED`, `DATE_INT_CONVERTED`, `DATE_PHRASE_EXTRACTED`, `QUALIFIED_DATE_PERIOD_NORMALIZED`. A qualifier inside a period or range (`FROM ABT 1920 TO BEF 1930`, `BET ABT 1936 AND 1939`), invalid in both grammars, is stripped from the v7 payload and the source wording kept as `PHRASE`; the down leg restores that wording verbatim. The `INT`/phrase round-trip is exact (`INT 1900 (about)` ↔ `1900` + `PHRASE about`). Date range/period keywords (`FROM`/`TO`/`BET`/`AND`/`BEF`/`AFT`/`ABT`/`CAL`/`EST`) are identical in both versions and pass through. Calendar month-token coverage remains planned. |
 | `TIME` | lossy: under event DATE hoisted to event note; under CHAN restored; elsewhere `_TIME` | N/A | N/A | `EVENT_TIME_NOTED`, `LDS_DATE_TIME_NOTED`, `LDS_STATUS_TIME_NOTED`. |
 | `SDATE` (sort date) | lossy: rewritten to note; PHRASE dropped | N/A | N/A | `SDATE_NOTED`, `SDATE_PHRASE_DROPPED`. |
 
@@ -272,7 +272,7 @@ Every code emitted by the converter, with the direction in which it can appear. 
 | `PEDI_PHRASE_FALLBACK` | up | 5.5.1 PEDI value outside the v7 enum → `OTHER` + `PHRASE`. |
 | `PEDI_PHRASE_NOTED` | compat | Non-standard `PEDI OTHER` hoisted to a family-link NOTE (`Pedigree: <phrase>`). |
 | `POINTER_PHRASE_NOTED` | compat | HUSB/WIFE/CHIL PHRASE hoisted to a note. |
-| `QUALIFIED_DATE_PERIOD_NORMALIZED` | up | Qualifier inside a 5.5.1 `FROM`/`TO` period stripped; source wording kept as PHRASE. |
+| `QUALIFIED_DATE_PERIOD_NORMALIZED` | up | Qualifier inside a 5.5.1 `FROM`/`TO` period or `BET`/`AND` range stripped; source wording kept as PHRASE. |
 | `REDUNDANT_AGE_PHRASE_DROPPED` | compat | Redundant `ADULT` PHRASE dropped from AGE. |
 | `REDUNDANT_ALIAS_PHRASE_DROPPED` | compat | Redundant `ALIAS` PHRASE dropped from ALIA. |
 | `REDUNDANT_PLACE_TRANSLATION_DROPPED` | compat | PLAC translation that duplicates the primary place text dropped. |

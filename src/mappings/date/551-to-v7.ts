@@ -191,14 +191,14 @@ export function mapGedcom551DateNodeToV7(node: GedcomNode, diagnostics: Diagnost
 
   const children = [...node.children];
 
-  // A qualifier inside FROM/TO is invalid in both grammars. The stripped period
+  // A qualifier inside FROM/TO or BET/AND is invalid in both grammars. The stripped period
   // stays in the payload; the source wording is kept as the PHRASE, which the
   // down-converter restores verbatim.
   if (value !== resolvedValue && node.value !== undefined) {
     diagnostics.push({
       severity: "info",
       code: "QUALIFIED_DATE_PERIOD_NORMALIZED",
-      message: `Removed a qualifier inside GEDCOM 5.5.1 date period ${node.value.trim()} to produce a valid GEDCOM 7 DatePeriod.`,
+      message: `Removed a qualifier inside GEDCOM 5.5.1 date period or range ${node.value.trim()} to produce a valid GEDCOM 7 date.`,
       location: withOptionalLocation(node)
     });
     if (!phraseInfo?.phrase) {
